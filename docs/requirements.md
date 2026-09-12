@@ -192,7 +192,7 @@
 
 ## 8. 验收对照（2026-09-13）
 
-自动化测试位置（`cargo test --offline --workspace`，共 70 项）：
+自动化测试位置（`cargo test --offline --workspace`，共 70 项（含 2 项真机挂载验收））：
 
 | 验收项 | 覆盖位置 | 状态 |
 |---|---|---|
@@ -217,10 +217,13 @@
 | AC-29 日志关闭后不 panic | `foundation-core/src/logging.rs` 测试 | ✅ |
 | AC-30..33 计划任务 XML/引号/模式 | `foundation-windows/src/{task,quote}.rs` 测试 + `drive-core/src/autostart.rs`（非法模式先拒、schtasks 查询链路） | ✅ |
 | AC-34 RC 只绑回环 + 版本可读 | `tests/rclone_provider.rs` | ✅ |
-| AC-35 挂载失败不拖死引擎 | `tests/rclone_provider.rs`（本机无 WinFsp，真实验证） | ✅ |
+| AC-35 挂载失败不拖死引擎 | `tests/rclone_provider.rs` + 真机挂载失败路径 | ✅ |
 | AC-36 探测失败不伪装成功 | `tests/rclone_provider.rs` | ✅ |
 | AC-37 配置静态加密 | `tests/rclone_provider.rs`（检查密文与明文泄露） | ✅ |
-| AC-38 挂载失败不残留挂载点 | `tests/mount_e2e.rs::failed_mount_leaves_no_residue` | ⏸ 测试已就绪，待 WinFsp 真机执行 |
+| AC-38 挂载失败不残留挂载点 | `tests/mount_e2e.rs::failed_mount_leaves_no_residue`（未知参数触发确定性失败） | ✅ 真机通过 |
 
-已知缺口（按优先级）：AC-38 与「挂载成功/读写/卸载」路径需要 WinFsp 真机（`tests/mount_e2e.rs` 已就绪，缺 WinFsp 时自动 SKIP）、AC-19..22 若恢复 Web 管理页再补、
-自启注册需要管理员权限（boot 模式），未在自动化中真实注册计划任务。缺口在对应阶段补齐前，不得宣称该阶段完成。
+真机补充验收（2026-09-13，WinFsp 2.1.25156 已安装）：`mount_success_read_and_unmount`
+（本地 WebDAV → 盘符出现 → 读文件/子目录 → 卸载后盘符消失）通过；AC-38 通过。
+
+剩余非阻塞项：AC-19..22 是旧版 Web 管理页的安全规则，Tauri IPC 形态下不适用（若恢复 Web 页由 `foundation-server` 承接）；
+boot 模式注册需要管理员权限，自动化不真实写计划任务（XML/引号/模式已由 foundation-windows 测试覆盖）。

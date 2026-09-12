@@ -197,6 +197,22 @@ impl RcloneProvider {
             ("RCLONE_RC_USER".into(), self.config.rc_user.clone()),
             ("RCLONE_RC_PASS".into(), self.config.rc_pass.clone()),
         ];
+        // WinFsp 装在当前会话 PATH 更新之前时，rclone 会找不到 winfsp-x64.dll；
+        // 这里显式把安装目录注入子进程 PATH（有则加，无则不动）。
+        #[cfg(windows)]
+        if let Some(dir) = winfsp_bin_dir() {
+            let mut path = dir.to_string_lossy().to_string();
+            if let Ok(existing) = std::env::var("PATH") {
+                let already = existing
+                    .to_ascii_lowercase()
+                    .contains(&dir.to_string_lossy().to_ascii_lowercase());
+                if !already && !existing.is_empty() {
+                    path.push(';');
+                    path.push_str(&existing);
+                }
+            }
+            spec.env.push(("PATH".into(), path));
+        }
         spec.readiness = Readiness::Http {
             url: format!("http://{}/core/version", self.config.rc_addr),
         };
@@ -216,6 +232,21 @@ impl RcloneProvider {
         );
         Ok(Engine { child, rc })
     }
+}
+
+/// 探测 WinFsp 安装目录（目录下带 winfsp-x64.dll 才算数；System32 与 WinFsp\bin 都兼容）。
+#[cfg(windows)]
+fn winfsp_bin_dir() -> Option<PathBuf> {
+    let system_root = std::env::var("SystemRoot").unwrap_or_else(|_| String::from("C:\\Windows"));
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    candidates.push(Path::new(&system_root).join("System32"));
+    candidates.push(PathBuf::from("C:\\Program Files (x86)\\WinFsp\\bin"));
+    candidates.push(PathBuf::from("C:\\Program Files\\WinFsp\\bin"));
+    candidates.into_iter().find(|dir| {
+        ["winfsp-x64.dll", "winfsp-a64.dll"]
+            .iter()
+            .any(|dll| dir.join(dll).exists())
+    })
 }
 
 #[cfg(windows)]

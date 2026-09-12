@@ -107,7 +107,7 @@ rclone provider 细节沿用旧版已验证结论：`rclone rcd` + 随机 RC 口
 | P1 底座 ✅ | core/config/secrets/windows/supervisor 实现 + 单元测试 | 已完成，测试全绿 |
 | P2 挂载 MVP ✅ | `apps/drive-core`（模型/参数/存储/rclone provider/服务）+ Tauri 宿主 | 引擎/配置/安全路径已验收；挂载成功路径待 WinFsp 真机 |
 | P3 托盘 UI ✅ | 托盘/单实例/日志面板/自启注册/无构建 UI 完成；Vue 迁移按需（ADR-0005） | AC-01..18/23..37 自动化通过；AC-28/38 待真机 |
-| P4 交付（部分） | 自启注册/退出清理/打包脚本/release 构建已完成；WinFsp 许可决策、签名、安装器待定 | 脚本实测通过；AC-28/38 待真机 |
+| P4 交付（部分） | 自启注册/退出清理/打包脚本/release 构建完成；真机挂载验收通过 | AC-28/38 真机通过；WinFsp 许可决策、签名、安装器待定 |
 | P5 可选 | Windows 原生 WebClient provider；`foundation-server` 管理页 | 按需 |
 | P6 Koma 试点 | 用 `foundation-windows`/`foundation-supervisor` 落 Koma Phase 5 一个小切片 | 不阻塞 Koma 主线 |
 

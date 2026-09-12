@@ -136,8 +136,12 @@ fn engine_starts_encrypts_config_and_creates_remote() {
     let probe_err = provider.probe(&connection, "pw-汉字").unwrap_err();
     assert_eq!(probe_err.code(), "process", "{probe_err}");
 
-    // AC-35：挂载失败（本机没有 WinFsp）必须干净报错，且不拖死引擎
-    let mount_err = provider.mount(&connection, "pw-汉字").unwrap_err();
+    // AC-35：挂载失败必须干净报错，且不拖死引擎。
+    // 用未知挂载参数触发确定性失败：不能依赖「机器有没有 WinFsp」，
+    // 也不要用不可达源——rclone 对它可能惰性挂载成功。
+    let mut failing = connection.clone();
+    failing.extra_opts = "--definitely-bogus-flag".into();
+    let mount_err = provider.mount(&failing, "pw-汉字").unwrap_err();
     assert_eq!(mount_err.code(), "process", "{mount_err}");
     assert!(provider.engine_status().running, "挂载失败后引擎仍应在运行");
     assert!(provider.list().is_ok(), "挂载失败后 RC 仍应可用");

@@ -35,10 +35,18 @@ fn find_rclone() -> Option<PathBuf> {
 }
 
 fn winfsp_present() -> bool {
+    // 兼容两种安装布局：老版本放 System32，新版放 WinFspin
+    let mut candidates: Vec<PathBuf> = Vec::new();
     let root = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
-    ["winfsp-x64.dll", "winfsp-a64.dll"]
-        .iter()
-        .any(|dll| Path::new(&root).join("System32").join(dll).exists())
+    for dll in ["winfsp-x64.dll", "winfsp-a64.dll"] {
+        candidates.push(Path::new(&root).join("System32").join(dll));
+    }
+    for base in [r"C:\Program Files (x86)\WinFsp", r"C:\Program Files\WinFsp"] {
+        for dll in ["winfsp-x64.dll", "winfsp-a64.dll"] {
+            candidates.push(Path::new(base).join("bin").join(dll));
+        }
+    }
+    candidates.iter().any(|path| path.exists())
 }
 
 fn free_port() -> u16 {
@@ -216,13 +224,15 @@ fn failed_mount_leaves_no_residue() {
 
     let work = temp_dir("fail");
     let (provider, secrets) = make_provider(&work, rclone);
-    // 目标端口没人监听：挂载必须失败
-    let connection = connection(secrets.as_ref(), "http://127.0.0.1:1/dav", &drive);
+    // 确定性失败：未知挂载参数会被 rclone RC 在建立挂载点之前拒绝。
+    // （注意：不可达的 WebDAV 源在 rclone 下是惰性挂载，可能成功返回，不适合做失败用例。）
+    let mut connection = connection(secrets.as_ref(), "http://127.0.0.1:1/dav", &drive);
+    connection.extra_opts = "--definitely-bogus-flag".into();
     provider.ensure_started().expect("引擎启动失败");
 
     let err = provider
         .mount(&connection, "e2e-pass-汉字")
-        .expect_err("不可达源不应挂载成功");
+        .expect_err("未知参数应导致挂载失败");
     assert_eq!(err.code(), "process", "{err}");
 
     let deadline = Instant::now() + Duration::from_secs(15);

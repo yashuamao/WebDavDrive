@@ -67,8 +67,11 @@
 - `--hidden` 启动参数：计划任务拉起时窗口不弹出；
 - AC-28 真机 E2E：新增 `drive-engine-holder` 测试辅助 bin，启动真实 rclone 后被
   `TerminateProcess` 强杀，验证 Job Object 在 2 秒内回收引擎（`tests/engine_reclaim.rs`）；
-- 真机挂载 E2E 就绪：`tests/mount_e2e.rs` 覆盖「本地 WebDAV → 挂成盘符 → 读文件/子目录 →
-  卸载后盘符消失」与 AC-38「失败挂载不残留」；缺 WinFsp 时自动 SKIP。
+- 真机挂载 E2E **已通过**（2026-09-13 安装 WinFsp 2.1.25156 后执行）：
+  `mount_success_read_and_unmount` 验证本地 WebDAV → 盘符出现 → 读文件/子目录 → 卸载后盘符消失；
+  AC-38 用未知参数触发确定性挂载失败并验证不残留。
+  注：不可达 WebDAV 源在 rclone 下是惰性挂载（可能成功返回），不适合作为失败用例；
+  另外 provider 现在会自动把 WinFspin 注入 rclone 子进程 PATH，兼容「先启动应用、后安装 WinFsp」的会话。
 
 ### P4 · 打包与首启引导（部分完成，2026-09-13）
 
