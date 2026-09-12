@@ -192,7 +192,7 @@
 
 ## 8. 验收对照（2026-09-13）
 
-自动化测试位置（`cargo test --offline --workspace`，共 68 项）：
+自动化测试位置（`cargo test --offline --workspace`，共 70 项）：
 
 | 验收项 | 覆盖位置 | 状态 |
 |---|---|---|
@@ -220,7 +220,7 @@
 | AC-35 挂载失败不拖死引擎 | `tests/rclone_provider.rs`（本机无 WinFsp，真实验证） | ✅ |
 | AC-36 探测失败不伪装成功 | `tests/rclone_provider.rs` | ✅ |
 | AC-37 配置静态加密 | `tests/rclone_provider.rs`（检查密文与明文泄露） | ✅ |
-| AC-38 挂载失败不残留挂载点 | 需要 WinFsp 真机 | ⏸ |
+| AC-38 挂载失败不残留挂载点 | `tests/mount_e2e.rs::failed_mount_leaves_no_residue` | ⏸ 测试已就绪，待 WinFsp 真机执行 |
 
-已知缺口（按优先级）：AC-38 与「挂载成功」路径需要 WinFsp 真机、AC-19..22 若恢复 Web 管理页再补、
+已知缺口（按优先级）：AC-38 与「挂载成功/读写/卸载」路径需要 WinFsp 真机（`tests/mount_e2e.rs` 已就绪，缺 WinFsp 时自动 SKIP）、AC-19..22 若恢复 Web 管理页再补、
 自启注册需要管理员权限（boot 模式），未在自动化中真实注册计划任务。缺口在对应阶段补齐前，不得宣称该阶段完成。
