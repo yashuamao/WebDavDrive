@@ -47,11 +47,11 @@
 
 ### 测试
 
-`cargo test --offline --workspace`：**67 项通过**（`--test-threads=1`）。
+`cargo test --offline --workspace`：**68 项通过**（`--test-threads=1`）。
 
 - 底座：core 6 · config 7 · secrets 7（含真实 DPAPI 往返）· windows 12（含真实 ACL/Job/单实例）
   · supervisor 8（含 4 项真实子进程测试）
-- 应用：drive-core 单元 6（含自启）+ 参数 6 + 存储 7 + 服务 6 + 真 rclone 集成 2
+- 应用：drive-core 单元 6（含自启）+ 参数 6 + 存储 7 + 服务 6 + 真 rclone 集成 2 + 引擎回收 1
 - 另有 `cargo check --offline --workspace` 零警告；`cargo build -p drive` 产出
   `drive.exe` 与 `drive-pwcmd.exe`
 
@@ -64,7 +64,9 @@
 - `AppService` 假 provider 测试 6 项：保存/探测/挂载/卸载/删除全链路、删除防孤儿
   （remote 删不掉或引擎不可达均保留配置）、密码损坏阻断操作、自启挂载只挂勾选项且失败不中断；
 - AC-09 用真 rclone 验证更新路径：修改 URL 后再次同步，读回 remote 配置确认已更新，配置仍加密；
-- `--hidden` 启动参数：计划任务拉起时窗口不弹出。
+- `--hidden` 启动参数：计划任务拉起时窗口不弹出；
+- AC-28 真机 E2E：新增 `drive-engine-holder` 测试辅助 bin，启动真实 rclone 后被
+  `TerminateProcess` 强杀，验证 Job Object 在 2 秒内回收引擎（`tests/engine_reclaim.rs`）。
 
 ### P4 · 打包与首启引导（部分完成，2026-09-13）
 

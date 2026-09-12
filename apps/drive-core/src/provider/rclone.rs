@@ -296,6 +296,12 @@ impl RcloneProvider {
 }
 
 impl RcloneProvider {
+    /// 当前引擎进程 pid（未启动为 None）；诊断与回收测试用。
+    pub fn engine_pid(&self) -> Option<u32> {
+        let guard = self.engine.lock().unwrap_or_else(|p| p.into_inner());
+        guard.as_ref().map(|engine| engine.child.pid())
+    }
+
     /// 读取 remote 的实际配置（诊断/测试用；pass 是 rclone obscure 后的值）。
     pub fn remote_config(&self, name: &str) -> Result<Value> {
         self.with_rc(|rc| rc.config_get(name))

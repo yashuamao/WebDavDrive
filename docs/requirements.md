@@ -192,7 +192,7 @@
 
 ## 8. 验收对照（2026-09-13）
 
-自动化测试位置（`cargo test --offline --workspace`，共 67 项）：
+自动化测试位置（`cargo test --offline --workspace`，共 68 项）：
 
 | 验收项 | 覆盖位置 | 状态 |
 |---|---|---|
@@ -213,7 +213,7 @@
 | AC-25 DPAPI 往返 | `foundation-secrets/src/dpapi.rs` 测试 | ✅ |
 | AC-26 加密配置 + 密钥丢失拒启 | `tests/rclone_provider.rs::encrypted_config_without_key_refuses_to_start` | ✅ |
 | AC-27 密钥损坏拒启 | `foundation-secrets/src/keyring.rs` 测试 | ✅ |
-| AC-28 引擎随宿主强杀回收 | `foundation-windows/src/job.rs` 测试 | ⚠️ 未做真机强杀 E2E |
+| AC-28 引擎随宿主强杀回收 | `tests/engine_reclaim.rs`：真 rclone + TerminateProcess 强杀宿主，验证 Job Object 回收 | ✅ |
 | AC-29 日志关闭后不 panic | `foundation-core/src/logging.rs` 测试 | ✅ |
 | AC-30..33 计划任务 XML/引号/模式 | `foundation-windows/src/{task,quote}.rs` 测试 + `drive-core/src/autostart.rs`（非法模式先拒、schtasks 查询链路） | ✅ |
 | AC-34 RC 只绑回环 + 版本可读 | `tests/rclone_provider.rs` | ✅ |
@@ -222,5 +222,5 @@
 | AC-37 配置静态加密 | `tests/rclone_provider.rs`（检查密文与明文泄露） | ✅ |
 | AC-38 挂载失败不残留挂载点 | 需要 WinFsp 真机 | ⏸ |
 
-已知缺口（按优先级）：AC-28/38 WinFsp 真机验收、AC-19..22 若恢复 Web 管理页再补、
+已知缺口（按优先级）：AC-38 与「挂载成功」路径需要 WinFsp 真机、AC-19..22 若恢复 Web 管理页再补、
 自启注册需要管理员权限（boot 模式），未在自动化中真实注册计划任务。缺口在对应阶段补齐前，不得宣称该阶段完成。
