@@ -47,13 +47,24 @@
 
 ### 测试
 
-`cargo test --offline --workspace`：**59 项通过**（`--test-threads=1`）。
+`cargo test --offline --workspace`：**67 项通过**（`--test-threads=1`）。
 
 - 底座：core 6 · config 7 · secrets 7（含真实 DPAPI 往返）· windows 12（含真实 ACL/Job/单实例）
   · supervisor 8（含 4 项真实子进程测试）
-- 应用：drive-core 单元 4 + 参数 6 + 存储 7 + 真 rclone 集成 2
+- 应用：drive-core 单元 6（含自启）+ 参数 6 + 存储 7 + 服务 6 + 真 rclone 集成 2
 - 另有 `cargo check --offline --workspace` 零警告；`cargo build -p drive` 产出
   `drive.exe` 与 `drive-pwcmd.exe`
+
+### P3 · 自启接入与验收缺口补齐（2026-09-13）
+
+- `drive-core::autostart`：计划任务状态/注册/移除封装；未知模式先拒绝再触系统，
+  注册参数为 `--hidden`（计划任务拉起后隐藏到托盘，由应用完成自启挂载）；
+- Tauri 新增 `autostart_status` / `install_autostart` / `uninstall_autostart` 命令与界面面板
+  （登录时/开机时切换、注册、移除）；
+- `AppService` 假 provider 测试 6 项：保存/探测/挂载/卸载/删除全链路、删除防孤儿
+  （remote 删不掉或引擎不可达均保留配置）、密码损坏阻断操作、自启挂载只挂勾选项且失败不中断；
+- AC-09 用真 rclone 验证更新路径：修改 URL 后再次同步，读回 remote 配置确认已更新，配置仍加密；
+- `--hidden` 启动参数：计划任务拉起时窗口不弹出。
 
 ### 尚未实现（后续阶段）
 

@@ -12,7 +12,9 @@
 4. 引擎（rclone）由宿主按需启动，口令与密钥逻辑在 `drive-core`；`drive-pwcmd.exe`
    随程序放在同目录，供 `--password-command` 调用（打包阶段必须一起分发）；
 5. 前端首版为无构建 HTML/JS（`apps/drive/ui`），直接使用 Tauri 注入的 `window.__TAURI__`。
-   Vue 迁移不阻塞功能，等 P3 需要复用 Koma 组件时再评估。
+   Vue 迁移不阻塞功能；等需要复用 Koma 组件（共享 UI 包）时再评估，避免为样式一致性提前引入构建链。
+6. 自启任务动作固定为 `<自身 exe> --hidden`：计划任务拉起后隐藏到托盘，
+   应用启动流程照常执行「挂载所有勾选自启的连接」。
 
 ## 后果
 

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use drive_core::model::ConnectionInput;
 use drive_core::provider::MountRecord;
-use drive_core::{AppService, AppStatus, ConnectionView, ProbeReport};
+use drive_core::{AppService, AppStatus, AutostartStatus, ConnectionView, ProbeReport};
 use foundation_core::RingLog;
 use tauri::State;
 
@@ -74,4 +74,20 @@ pub fn shutdown_engine(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn logs(state: State<'_, AppState>, limit: Option<usize>) -> Vec<String> {
     state.log.tail(limit.unwrap_or(200))
+}
+
+#[tauri::command]
+pub fn autostart_status() -> Result<AutostartStatus, String> {
+    drive_core::autostart::status().map_err(message)
+}
+
+#[tauri::command]
+pub fn install_autostart(mode: String) -> Result<AutostartStatus, String> {
+    let exe = std::env::current_exe().map_err(|err| format!("无法定位程序路径：{err}"))?;
+    drive_core::autostart::install(&mode, &exe, &["--hidden".to_string()]).map_err(message)
+}
+
+#[tauri::command]
+pub fn uninstall_autostart() -> Result<AutostartStatus, String> {
+    drive_core::autostart::uninstall().map_err(message)
 }

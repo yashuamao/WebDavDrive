@@ -15,7 +15,7 @@ const VFS_LABELS = {
   full: 'full —— 全量本地缓存',
 };
 
-let state = { profiles: [], mounts: [], status: null };
+let state = { profiles: [], mounts: [], status: null, autostart: null };
 
 function escapeHtml(value) {
   return String(value == null ? '' : value)
@@ -62,6 +62,16 @@ function renderEnv(status) {
     : badge('引擎未启动', 'mute'));
   rows.push(badge(`密钥：${status.secrets || '-'}`, 'mute'));
   $('env').innerHTML = rows.join('');
+}
+
+function renderAutostart(info) {
+  const box = $('autostart-box');
+  const rows = [['状态', info && info.installed ? badge('已注册', 'ok') : badge('未注册', 'mute')]];
+  if (info && info.installed) {
+    rows.push(['模式', escapeHtml(info.mode === 'boot' ? '开机（SYSTEM）' : '登录（当前用户）')]);
+    rows.push(['任务名', `<span class="muted">${escapeHtml(info.task_name || '')}</span>`]);
+  }
+  box.innerHTML = rows.map(([k, v]) => `<div><span class="muted">${k}</span><span>${v}</span></div>`).join('');
 }
 
 function renderProfiles() {
@@ -139,14 +149,17 @@ function readForm() {
 }
 
 async function refresh() {
-  const [status, profiles] = await Promise.all([
+  const [status, profiles, autostart] = await Promise.all([
     invoke('app_status'),
     invoke('list_connections'),
+    invoke('autostart_status').catch(() => null),
   ]);
   state.status = status;
   state.mounts = status.mounts || [];
   state.profiles = profiles || [];
+  state.autostart = autostart;
   renderEnv(status);
+  renderAutostart(autostart);
   renderProfiles();
 }
 
@@ -172,6 +185,16 @@ async function boot() {
       const lines = await run('', () => invoke('logs', { limit: 300 }));
       if (lines) $('log').textContent = lines.join('\n');
     }
+  });
+
+  $('btn-autostart-on').addEventListener('click', async () => {
+    const mode = $('autostart-mode').value;
+    const result = await run('已注册开机自启', () => invoke('install_autostart', { mode }));
+    if (result) await refresh();
+  });
+  $('btn-autostart-off').addEventListener('click', async () => {
+    const result = await run('已移除开机自启', () => invoke('uninstall_autostart'));
+    if (result) await refresh();
   });
 
   $('profiles').addEventListener('click', async (event) => {

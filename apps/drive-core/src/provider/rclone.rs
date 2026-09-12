@@ -295,6 +295,13 @@ impl RcloneProvider {
     }
 }
 
+impl RcloneProvider {
+    /// 读取 remote 的实际配置（诊断/测试用；pass 是 rclone obscure 后的值）。
+    pub fn remote_config(&self, name: &str) -> Result<Value> {
+        self.with_rc(|rc| rc.config_get(name))
+    }
+}
+
 impl MountProvider for RcloneProvider {
     fn id(&self) -> &'static str {
         "rclone"

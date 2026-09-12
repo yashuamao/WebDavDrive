@@ -87,6 +87,8 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
 }
 
 pub fn run() {
+    // 计划任务拉起时带 --hidden：启动即隐藏到托盘
+    let hidden = std::env::args().any(|arg| arg == "--hidden");
     let data_dir = data_dir();
     let _ = std::fs::create_dir_all(&data_dir);
 
@@ -136,9 +138,17 @@ pub fn run() {
             commands::ensure_engine,
             commands::shutdown_engine,
             commands::logs,
+            commands::autostart_status,
+            commands::install_autostart,
+            commands::uninstall_autostart,
         ])
         .setup(move |app| {
             setup_tray(app)?;
+            if hidden {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
             // 启动时挂载自启项：后台执行，不阻塞首屏
             let service = app.state::<AppState>().service.clone();
             std::thread::spawn(move || {

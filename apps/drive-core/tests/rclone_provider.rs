@@ -110,6 +110,22 @@ fn engine_starts_encrypts_config_and_creates_remote() {
     assert!(!conf.contains("pw-汉字"), "密码不得出现在明文配置");
     assert!(dir.join("config_key.enc").exists(), "密钥文件应生成");
 
+    // AC-09：再次保存走 update 而不是重建（改 URL 后 remote 配置应更新）
+    let mut edited = connection.clone();
+    edited.url = "http://127.0.0.1:2/dav".into();
+    provider
+        .ensure_remote(&edited, "pw-汉字")
+        .expect("更新 remote 应成功");
+    let stored = provider.remote_config(&connection.remote).unwrap();
+    assert_eq!(stored.get("type").and_then(|v| v.as_str()), Some("webdav"));
+    assert_eq!(
+        stored.get("url").and_then(|v| v.as_str()),
+        Some("http://127.0.0.1:2/dav"),
+        "更新后 URL 应变化：{stored}"
+    );
+    let conf_after = std::fs::read_to_string(dir.join("rclone.conf")).unwrap();
+    assert!(conf_after.starts_with("# Encrypted rclone configuration File"));
+
     // AC-34：list 可用（没有挂载也应是空列表而不是错误）
     assert!(provider.list().unwrap().is_empty());
 

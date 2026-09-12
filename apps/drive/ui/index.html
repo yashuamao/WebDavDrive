@@ -51,6 +51,20 @@
   </section>
 
   <section class="panel">
+    <h2>开机自动挂载</h2>
+    <div id="autostart-box" class="status"></div>
+    <div class="actions" style="margin-top:10px">
+      <select id="autostart-mode" style="width:auto">
+        <option value="logon">登录时（当前用户，推荐）</option>
+        <option value="boot">开机时（SYSTEM，全局盘符）</option>
+      </select>
+      <button type="button" class="primary" id="btn-autostart-on">注册</button>
+      <button type="button" class="danger" id="btn-autostart-off">移除</button>
+    </div>
+    <p class="hint">注册需要管理员权限；boot 模式属主为 SYSTEM，其他账户可能写不进文件。</p>
+  </section>
+
+  <section class="panel">
     <h2>已保存的连接</h2>
     <div id="profiles" class="profiles"></div>
   </section>
