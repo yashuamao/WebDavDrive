@@ -1,0 +1,14 @@
+[package]
+name = "foundation-core"
+description = "通用底座：错误层级、日志环形缓冲、跨平台 trait"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }

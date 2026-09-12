@@ -1,0 +1,12 @@
+[package]
+name = "foundation-supervisor"
+description = "通用底座：外部进程托管（启动、就绪探测、停止、守卫装配）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+foundation-core = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }

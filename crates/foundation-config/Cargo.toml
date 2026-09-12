@@ -1,0 +1,18 @@
+[package]
+name = "foundation-config"
+description = "通用底座：版本化 JSON 配置存储（原子写 / 备份 / 损坏隔离 / 迁移入口）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+foundation-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+uuid = { workspace = true }

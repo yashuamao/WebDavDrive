@@ -1,0 +1,16 @@
+[package]
+name = "foundation-secrets"
+description = "通用底座：密钥存储抽象（Windows DPAPI / 文件回退）与密钥生命周期守卫"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+foundation-core = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_Memory"] }

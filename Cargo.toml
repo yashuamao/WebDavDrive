@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/foundation-core",
+    "crates/foundation-config",
+    "crates/foundation-secrets",
+    "crates/foundation-windows",
+    "crates/foundation-supervisor",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "Proprietary"          # 见 docs/adr/0004-licensing.md，发布前必须改
+authors = ["Koma / webdav-drive"]
+
+[workspace.dependencies]
+foundation-core = { path = "crates/foundation-core" }
+foundation-config = { path = "crates/foundation-config" }
+foundation-secrets = { path = "crates/foundation-secrets" }
+foundation-windows = { path = "crates/foundation-windows" }
+foundation-supervisor = { path = "crates/foundation-supervisor" }
+
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.20"
+log = { version = "0.4.34", features = ["std"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+uuid = { version = "1.26.0", features = ["v4"] }
+parking_lot = "0.12.5"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

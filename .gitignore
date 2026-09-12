@@ -1,0 +1,20 @@
+# Rust
+/target/
+**/target/
+
+# Node / Tauri / Vue
+node_modules/
+dist/
+apps/drive/src-tauri/gen/
+
+# 本地与机密
+.env
+.env.local
+secrets/
+*.log
+
+# 运行数据（绝不进库）
+/data/
+*.db
+*.db-wal
+*.db-shm
