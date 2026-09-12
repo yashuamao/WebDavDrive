@@ -17,7 +17,10 @@ crates/                      # 通用底座：不出现任何漫画 / WebDAV / r
   foundation-windows/        #   Job Object、ACL、计划任务、单实例、命令行情号
   foundation-supervisor/     #   外部进程托管：就绪探测、回收、停止
 apps/
-  drive/                     # webdav-drive：Tauri 2 托盘 + rclone provider（待建）
+  drive-core/                # webdav-drive 业务核心（无 Tauri 依赖）：模型/参数/存储/provider/服务
+  drive/                     # Tauri 2 宿主
+    src-tauri/               #   Rust 宿主：托盘、单实例、IPC 命令
+    ui/                      #   无构建 HTML/JS 界面
 docs/
   adr/                       # 架构决策记录
   legacy/                    # 旧 Python 版文档（只读参考）
@@ -26,9 +29,12 @@ docs/
 ## 构建
 
 ```powershell
-cargo test --offline          # 当前依赖在本机 registry 缓存中
-cargo check --offline
+cargo test --offline --workspace -- --test-threads=1   # 当前依赖全部命中本机 registry 缓存
+cargo check --offline --workspace
+cargo build --offline -p drive                          # 产出 drive.exe + drive-pwcmd.exe
 ```
+
+运行 `target\debug\drive.exe` 需要 `rclone.exe`：放到程序同目录或 `bin/`，或设置 `RCLONE_EXE`。
 
 > 底座 crates 不得依赖 Tauri、不得出现领域词汇；平台能力经 trait 注入。
 > 详细规则见 `docs/adr/0001-foundation-boundaries.md`。

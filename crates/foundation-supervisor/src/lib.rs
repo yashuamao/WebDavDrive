@@ -110,7 +110,7 @@ impl ManagedChild {
     /// 轮询直到就绪；进程提前退出或超时都返回明确错误。
     pub fn wait_ready(&mut self, spec: &Spec) -> Result<()> {
         let deadline = Instant::now() + spec.ready_timeout;
-        let mut last = "尚未开始探测".to_string();
+        let mut last = String::new();
         loop {
             if let Ok(Some(status)) = self.child.try_wait() {
                 let hint = readiness_addr(&self.readiness)
@@ -124,12 +124,21 @@ impl ManagedChild {
 
             match probe(&self.readiness, Duration::from_millis(800)) {
                 Ok(()) => return Ok(()),
-                Err(err) => last = err,
+                Err(err) => {
+                    // 读取旧值：既提供排障上下文，也避免 unused_assignments
+                    log::debug!("等待就绪（上次探测：{last}）：{err}");
+                    last = err;
+                }
             }
 
             if Instant::now() >= deadline {
+                let detail = if last.is_empty() {
+                    "未收到任何探测结果".to_string()
+                } else {
+                    last
+                };
                 return Err(FoundationError::Process(format!(
-                    "等待就绪超时（{:?}）：{last}",
+                    "等待就绪超时（{:?}）：{detail}",
                     spec.ready_timeout
                 )));
             }

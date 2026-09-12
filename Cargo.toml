@@ -6,6 +6,8 @@ members = [
     "crates/foundation-secrets",
     "crates/foundation-windows",
     "crates/foundation-supervisor",
+    "apps/drive-core",
+    "apps/drive/src-tauri",
 ]
 
 [workspace.package]

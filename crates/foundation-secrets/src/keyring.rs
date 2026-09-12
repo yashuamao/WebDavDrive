@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use foundation_core::{FoundationError, Result};
 use uuid::Uuid;
@@ -23,12 +24,12 @@ impl KeyState {
 
 /// 配置加密密钥的生命周期守卫。
 pub struct KeyRing {
-    store: Box<dyn SecretStore>,
+    store: Arc<dyn SecretStore>,
     key_path: PathBuf,
 }
 
 impl KeyRing {
-    pub fn new(store: Box<dyn SecretStore>, key_path: impl Into<PathBuf>) -> Self {
+    pub fn new(store: Arc<dyn SecretStore>, key_path: impl Into<PathBuf>) -> Self {
         Self {
             store,
             key_path: key_path.into(),
@@ -109,7 +110,7 @@ mod tests {
     fn ring(tag: &str) -> (KeyRing, PathBuf) {
         let dir = dir(tag);
         let key_path = dir.join("config_key.enc");
-        let store = Box::new(FileSecretStore::new(dir.join("keystore.bin")));
+        let store = Arc::new(FileSecretStore::new(dir.join("keystore.bin")));
         (KeyRing::new(store, key_path.clone()), key_path)
     }
 

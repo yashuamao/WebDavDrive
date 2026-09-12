@@ -187,3 +187,40 @@
 - WinFsp 许可路线（GPLv3 + FLOSS 例外 / 商业授权 / 仅原生 WebClient provider）；
 - 托盘 UI 的最终形态与配置页承载方式（Tauri 窗口 vs 内嵌 Web 页）；
 - 是否保留“其他机器浏览器访问管理页”的能力（若保留，`foundation-server` 接手）。
+
+---
+
+## 8. 验收对照（2026-09-13）
+
+自动化测试位置（`cargo test --offline --workspace`，共 59 项）：
+
+| 验收项 | 覆盖位置 | 状态 |
+|---|---|---|
+| AC-01..03 地址/id 校验 | `apps/drive-core/tests/params.rs` | ✅ |
+| AC-04 密码不明文落盘 | `tests/store.rs::dpapi_profile_never_stores_plaintext_password` | ✅（DPAPI 路径） |
+| AC-05 留空保留 / 显式清除 | `tests/store.rs` | ✅ |
+| AC-06 损坏密码必须报错 | `tests/store.rs::corrupt_password_token_reports_error_instead_of_empty` | ✅ |
+| AC-07 损坏配置隔离 | `tests/store.rs::corrupt_profiles_file_is_quarantined_and_starts_empty` | ✅ |
+| AC-08 二次保存生成 .bak | `tests/store.rs::second_save_creates_backup` | ✅ |
+| AC-09 更新走 update 不重建 remote | `tests/rclone_provider.rs`（首次 create） | ⚠️ 仅 create 路径；update 待补 |
+| AC-10 删除防孤儿 | `drive-core/src/service.rs` 实现 | ⚠️ 缺自动化用例 |
+| AC-11..14 挂载点规则 | `tests/params.rs` | ✅ |
+| AC-15..16 目录挂载点/网络模式互斥 | `tests/params.rs` | ✅ |
+| AC-17..18 附加参数与黑名单 | `tests/params.rs` | ✅ |
+| AC-19..22 Web 管理页安全 | 旧 Python smoke 已验证 | ⏸ Tauri IPC 版无 Web 页；启用 `foundation-server` 时移植 |
+| AC-23 RC 拒绝未认证 | `tests/rclone_provider.rs::unauthorized_rc_status` | ✅ |
+| AC-24 数据目录 ACL | `foundation-windows/src/acl.rs` 测试（属主可读 + 无 Users 组） | ✅ |
+| AC-25 DPAPI 往返 | `foundation-secrets/src/dpapi.rs` 测试 | ✅ |
+| AC-26 加密配置 + 密钥丢失拒启 | `tests/rclone_provider.rs::encrypted_config_without_key_refuses_to_start` | ✅ |
+| AC-27 密钥损坏拒启 | `foundation-secrets/src/keyring.rs` 测试 | ✅ |
+| AC-28 引擎随宿主强杀回收 | `foundation-windows/src/job.rs` 测试 | ⚠️ 未做真机强杀 E2E |
+| AC-29 日志关闭后不 panic | `foundation-core/src/logging.rs` 测试 | ✅ |
+| AC-30..33 计划任务 XML/引号/模式 | `foundation-windows/src/{task,quote}.rs` 测试 | ✅ |
+| AC-34 RC 只绑回环 + 版本可读 | `tests/rclone_provider.rs` | ✅ |
+| AC-35 挂载失败不拖死引擎 | `tests/rclone_provider.rs`（本机无 WinFsp，真实验证） | ✅ |
+| AC-36 探测失败不伪装成功 | `tests/rclone_provider.rs` | ✅ |
+| AC-37 配置静态加密 | `tests/rclone_provider.rs`（检查密文与明文泄露） | ✅ |
+| AC-38 挂载失败不残留挂载点 | 需要 WinFsp 真机 | ⏸ |
+
+已知缺口（按优先级）：AC-10 自动化用例、AC-09 update 路径、AC-28/38 WinFsp 真机验收、
+AC-19..22 若恢复 Web 管理页再补。缺口在对应阶段补齐前，不得宣称该阶段完成。

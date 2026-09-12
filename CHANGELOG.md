@@ -31,20 +31,38 @@
 - `foundation-supervisor`：外部进程托管（凭据走环境变量）、TCP/HTTP 就绪探测（4xx 视为可服务）、
   提前退出与端口占用的区分、宽限后强杀、子进程守卫装配。
 
+### P2 · drive-core 与 Tauri 托盘宿主（2026-09-13）
+
+- `apps/drive-core`：连接模型与校验（AC-01..03、BR-3）、rclone 挂载参数映射（AC-11..18）、
+  连接配置存储（AC-04..08，含旧 Python `profiles.json` 自动迁移）、密钥生命周期接入（AC-26）、
+  rclone RC 客户端（手写 HTTP/Basic/chunked，含假服务器测试）、`RcloneProvider`
+  （静态加密配置 + `--password-command`、RC 口令走环境变量、Job Object、就绪探测）、
+  `AppService` 用例编排（保存/探测/挂载/卸载/删除防孤儿/自启挂载）；
+- `apps/drive/src-tauri`：Tauri 2 托盘宿主（单实例插件、关闭隐藏、托盘菜单、退出停引擎）、
+  11 个 IPC 命令（连接 CRUD、探测、挂载/卸载、状态、日志）、无构建 HTML/JS 界面；
+- 真 rclone 集成测试（本机无 WinFsp）：引擎启动 + 配置加密不泄露 remote/密码 +
+  未认证 RC 401 + 探测/挂载失败干净返回且引擎存活（AC-23/34/35/36/37）；
+- 真机启动冒烟：`drive.exe` 启动后创建 `%PROGRAMDATA%\WebDavDrive`、收紧 ACL、
+  选择 DPAPI 后端；第二个实例被单实例插件拦截后退出。
+
 ### 测试
 
-`cargo test --offline --workspace`：**40 项通过**。
+`cargo test --offline --workspace`：**59 项通过**（`--test-threads=1`）。
 
-- core 6 · config 7 · secrets 7（含真实 DPAPI 往返）· windows 12（含真实 ACL/Job/单实例）
+- 底座：core 6 · config 7 · secrets 7（含真实 DPAPI 往返）· windows 12（含真实 ACL/Job/单实例）
   · supervisor 8（含 4 项真实子进程测试）
+- 应用：drive-core 单元 4 + 参数 6 + 存储 7 + 真 rclone 集成 2
+- 另有 `cargo check --offline --workspace` 零警告；`cargo build -p drive` 产出
+  `drive.exe` 与 `drive-pwcmd.exe`
 
 ### 尚未实现（后续阶段）
 
-- P2：`apps/drive` 的 Tauri 2 外壳、连接模型、rclone provider、挂载编排；
-- P3：托盘 UI（Vue 3）、日志面板、单实例联动；
-- P4：自启注册、退出清理、打包（含 rclone 分发与 ADR-0004 许可决策）；
-- P5+：Windows 原生 WebClient provider、`foundation-server`、`foundation-tauri`、
-  Koma Phase 5 试点接入。
+- P3：自启注册（foundation-windows task 已就绪，待接入 UI）、Vue 迁移评估、
+  AC-10 删除防孤儿的自动化用例、AC-09 update 路径用例；
+- P4：打包与引擎分发（含 ADR-0004 许可决策）、签名、首启引导；
+- 真机验收缺口：AC-28（强杀宿主回收引擎）、AC-38（挂载失败不残留）、
+  无 WinFsp 环境下的挂载成功路径；
+- P5+：Windows 原生 WebClient provider、`foundation-server`、Koma Phase 5 试点接入。
 
 ### 注意
 

@@ -1,0 +1,28 @@
+[package]
+name = "drive-core"
+description = "webdav-drive 应用核心：连接模型、挂载参数、配置存储、rclone provider（不含 Tauri）"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+foundation-core = { workspace = true }
+foundation-config = { workspace = true }
+foundation-secrets = { workspace = true }
+foundation-supervisor = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+uuid = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+foundation-windows = { workspace = true }
+
+[[bin]]
+name = "drive-pwcmd"
+path = "src/bin/pwcmd.rs"
+
+[dev-dependencies]
+uuid = { workspace = true }

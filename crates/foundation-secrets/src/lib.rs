@@ -18,6 +18,9 @@ mod dpapi;
 pub use file::FileSecretStore;
 pub use keyring::{KeyRing, KeyState};
 
+#[cfg(windows)]
+pub use dpapi::DpapiMachineStore;
+
 /// 可插拔的密钥保护后端。
 pub trait SecretStore: Send + Sync + 'static {
     /// 后端名称（日志用），如 "dpapi-machine" / "plain-file"。
@@ -31,14 +34,14 @@ pub trait SecretStore: Send + Sync + 'static {
 /// 根据平台选择默认后端：
 /// - Windows → 机器范围 DPAPI；
 /// - 其他平台 → 受限权限文件（明文，仅供开发/测试；NAS 正式部署应注入系统密钥源）。
-pub fn default_store(plain_file_path: std::path::PathBuf) -> Box<dyn SecretStore> {
+pub fn default_store(plain_file_path: std::path::PathBuf) -> std::sync::Arc<dyn SecretStore> {
     #[cfg(windows)]
     {
         let _ = plain_file_path; // Windows 不使用明文文件
-        Box::new(dpapi::DpapiMachineStore::new())
+        std::sync::Arc::new(dpapi::DpapiMachineStore::new())
     }
     #[cfg(not(windows))]
     {
-        Box::new(FileSecretStore::new(plain_file_path))
+        std::sync::Arc::new(FileSecretStore::new(plain_file_path))
     }
 }

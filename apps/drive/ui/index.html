@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebDAV Drive</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="brand">WebDAV Drive</div>
+  <div class="env" id="env"></div>
+  <div class="spacer"></div>
+  <button id="btn-refresh" class="ghost">刷新</button>
+  <button id="btn-logs" class="ghost">日志</button>
+</header>
+
+<main>
+  <section class="panel">
+    <h2 id="form-title">新建连接</h2>
+    <form id="form" autocomplete="off">
+      <input type="hidden" id="f-id">
+      <label><span>名称</span><input id="f-name" placeholder="我的 NAS" required></label>
+      <label><span>WebDAV 地址</span><input id="f-url" placeholder="https://nas.example.com/dav" required></label>
+      <div class="row">
+        <label><span>用户名</span><input id="f-user" placeholder="alice"></label>
+        <label><span>密码</span><input id="f-password" type="password" placeholder="留空表示不修改"></label>
+      </div>
+      <div class="row">
+        <label><span>服务端类型</span>
+          <select id="f-vendor"></select>
+        </label>
+        <label><span>盘符或目录</span><input id="f-drive" placeholder="X: 或 C:\mnt\nas"></label>
+      </div>
+      <label><span>卷标</span><input id="f-volname" placeholder="留空则用名称"></label>
+      <div class="row">
+        <label><span>VFS 缓存模式</span><select id="f-vfs"></select></label>
+        <label><span>目录缓存时间</span><input id="f-dircache" value="5m"></label>
+      </div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" id="f-network"><span>网络驱动器</span></label>
+        <label class="check"><input type="checkbox" id="f-readonly"><span>只读</span></label>
+        <label class="check"><input type="checkbox" id="f-autostart"><span>开机自动挂载</span></label>
+      </div>
+      <label><span>附加 rclone 参数</span><input id="f-extra" placeholder="--vfs-cache-max-size 10G"></label>
+      <div class="actions">
+        <button type="submit" class="primary" id="btn-save">保存</button>
+        <button type="button" id="btn-reset">清空 / 新建</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>已保存的连接</h2>
+    <div id="profiles" class="profiles"></div>
+  </section>
+</main>
+
+<section class="panel log-panel" id="log-panel" hidden>
+  <h2>日志</h2>
+  <pre id="log"></pre>
+</section>
+
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

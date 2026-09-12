@@ -31,7 +31,7 @@ fn last_error() -> String {
 }
 
 fn protect_bytes(data: &[u8]) -> Result<Vec<u8>> {
-    let mut input = CRYPT_INTEGER_BLOB {
+    let input = CRYPT_INTEGER_BLOB {
         cbData: data.len() as u32,
         pbData: data.as_ptr() as *mut u8,
     };
