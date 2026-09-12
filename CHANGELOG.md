@@ -66,6 +66,17 @@
 - AC-09 用真 rclone 验证更新路径：修改 URL 后再次同步，读回 remote 配置确认已更新，配置仍加密；
 - `--hidden` 启动参数：计划任务拉起时窗口不弹出。
 
+### P4 · 打包与首启引导（部分完成，2026-09-13）
+
+- `scripts/package-windows.ps1`：`cargo build --release` → `dist\WebDavDrive-<版本>\`，
+  含 `drive.exe`、`drive-pwcmd.exe`（必须同目录）、可选 `rclone.exe`、`使用说明.txt`，支持 `-Zip`；
+  脚本不注册计划任务、不写注册表，并在输出中提示 ADR-0004 未决前不得对外分发；
+- 脚本以 UTF-8 **BOM** 保存：Windows PowerShell 5.1 会按 ANSI 读取无 BOM 的 UTF-8，
+  中文直接乱码并导致解析失败（本轮实测踩到）；
+- release 构建与打包实测通过（`cargo build --release` 2m30s，产物约 9.6MB + rclone 81MB + zip 31.9MB），
+  staged release 启动正常、同目录引擎可被查找；
+- 首启引导：界面在找不到 rclone 时显示明确提示（放置位置 / `RCLONE_EXE` / 下载地址）。
+
 ### 尚未实现（后续阶段）
 
 - P3：自启注册（foundation-windows task 已就绪，待接入 UI）、Vue 迁移评估、

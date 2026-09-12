@@ -62,6 +62,12 @@ function renderEnv(status) {
     : badge('引擎未启动', 'mute'));
   rows.push(badge(`密钥：${status.secrets || '-'}`, 'mute'));
   $('env').innerHTML = rows.join('');
+  const hint = $('engine-hint');
+  if (hint) {
+    hint.hidden = !!engine.installed;
+    hint.textContent = '未找到 rclone.exe：把 rclone.exe 放到程序同目录（或 bin\ 子目录），'
+      + '或设置环境变量 RCLONE_EXE。下载：https://rclone.org/downloads/';
+  }
 }
 
 function renderAutostart(info) {

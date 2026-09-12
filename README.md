@@ -36,5 +36,18 @@ cargo build --offline -p drive                          # 产出 drive.exe + dri
 
 运行 `target\debug\drive.exe` 需要 `rclone.exe`：放到程序同目录或 `bin/`，或设置 `RCLONE_EXE`。
 
+## 打包（Windows 免安装）
+
+```powershell
+.\scripts\package-windows.ps1 -RclonePath <rclone.exe 路径>   # 找不到时自动尝试 bin/ 或 RCLONE_EXE
+.\scripts\package-windows.ps1 -SkipRclone -Zip               # 不含引擎 / 额外打 zip
+```
+
+产物为 `dist\WebDavDrive-<版本>\`：`drive.exe`、`drive-pwcmd.exe`（必须同目录）、
+可选的 `rclone.exe`、`使用说明.txt`。脚本不会注册计划任务、不写注册表。
+
+运行前置：**WinFsp**（rclone 挂载的硬依赖，需用户单独安装）与 `rclone.exe`（MIT，可随包）。
+WinFsp 是 GPLv3 + FLOSS 例外 / 商业授权双轨——**ADR-0004 确认前产物不得对外分发**。
+
 > 底座 crates 不得依赖 Tauri、不得出现领域词汇；平台能力经 trait 注入。
 > 详细规则见 `docs/adr/0001-foundation-boundaries.md`。
