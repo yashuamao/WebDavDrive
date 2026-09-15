@@ -243,6 +243,8 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::Path};
+
     /// 托盘图标只能由 `setup_tray()` 创建一次。
     ///
     /// `tauri.conf.json` 的 `app.trayIcon` 会让 Tauri 在 `build()` 阶段（setup 之前）
@@ -254,6 +256,56 @@ mod tests {
         assert!(
             context.config().app.tray_icon.is_none(),
             "tauri.conf.json 不应声明 app.trayIcon：它会与 setup_tray() 重复创建托盘图标（见 CHANGELOG 0.1.1）"
+        );
+    }
+
+    /// 前端通过 Tauri event API 接收退出清理失败通知；发布版必须显式授权主窗口监听。
+    #[test]
+    fn main_capability_allows_event_listening() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("capabilities/default.json");
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("缺少主窗口 capability {}：{err}", path.display()));
+        let capability: serde_json::Value =
+            serde_json::from_str(&source).expect("capabilities/default.json 必须是有效 JSON");
+
+        let windows = capability["windows"]
+            .as_array()
+            .expect("主窗口 capability 必须声明 windows");
+        assert!(
+            windows.iter().any(|window| window.as_str() == Some("main")),
+            "capability 必须绑定 Tauri 主窗口 main"
+        );
+
+        let permissions = capability["permissions"]
+            .as_array()
+            .expect("主窗口 capability 必须声明 permissions");
+        assert!(
+            permissions.iter().any(|permission| {
+                matches!(
+                    permission.as_str(),
+                    Some("core:event:allow-listen" | "core:event:default")
+                )
+            }),
+            "前端调用 event.listen，主窗口必须具备 core:event:allow-listen 权限"
+        );
+    }
+
+    /// 可选事件订阅即使失败，也不能阻止日志、新建连接等基础按钮完成绑定。
+    #[test]
+    fn ui_handlers_bind_before_optional_event_subscription() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ui/app.js");
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("无法读取前端脚本 {}：{err}", path.display()));
+        let first_handler = source
+            .find(".addEventListener(")
+            .expect("前端必须绑定 UI 事件处理器");
+        let event_subscription = source
+            .find(".event.listen(")
+            .expect("前端必须订阅退出清理失败事件");
+
+        assert!(
+            first_handler < event_subscription,
+            "应先绑定 UI 按钮，再执行可能被 ACL 拒绝的 event.listen"
         );
     }
 }

@@ -390,12 +390,6 @@ async function boot() {
 
   await run('', async () => { await refresh(); await refreshAutostart(); });
 
-  if (window.__TAURI__.event && typeof window.__TAURI__.event.listen === 'function') {
-    await window.__TAURI__.event.listen('exit-cleanup-failed', (event) => {
-      showExitError(String(event.payload || ''));
-    });
-  }
-
   document.querySelectorAll('.nav-item').forEach((button) => {
     button.addEventListener('click', () => setView(button.dataset.view));
   });
@@ -471,6 +465,17 @@ async function boot() {
     const result = await run('已移除自动挂载', () => invoke('uninstall_autostart'));
     if (result) { await refresh(); await refreshAutostart(); }
   });
+
+  if (window.__TAURI__.event && typeof window.__TAURI__.event.listen === 'function') {
+    try {
+      await window.__TAURI__.event.listen('exit-cleanup-failed', (event) => {
+        showExitError(String(event.payload || ''));
+      });
+    } catch (err) {
+      // 事件通知是退出失败提示的增强路径，不能让 ACL/运行时异常拖垮整个界面。
+      console.warn('无法订阅退出清理失败事件：', err);
+    }
+  }
 
   setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 5000);
 }

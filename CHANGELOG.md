@@ -1,5 +1,20 @@
 # 变更日志
 
+## 0.1.2 — 2026-09-15
+
+- 修复发布版启动时报 `Command plugin:event|listen not allowed by ACL`，导致界面初始化失败的问题；
+- 为 Tauri 主窗口补充最小事件监听权限；
+- UI 按钮现在先于可选事件订阅完成绑定，即使订阅异常，日志、新建连接等基础功能仍可使用；
+- 增加 capability 与前端初始化顺序回归检查。
+
+验证状态：
+
+- `cargo test --offline --workspace -- --test-threads=1`：69 项通过 / 0 失败 / 0 忽略，
+  rclone、引擎回收与 WinFsp 挂载 E2E 均实际执行；
+- 发布版 WebView 冒烟通过：无 ACL 初始化错误，日志 IPC 返回数组，日志页面可正常打开；
+- `WebDavDrive-0.1.2.zip` SHA-256：
+  `c65dc3c223cfcca848d67711b6bae797a3d54d801b064d1c3bc90e8fc5b0fc66`。
+
 ## 0.1.1 — 2026-09-15
 
 首次公开版本：

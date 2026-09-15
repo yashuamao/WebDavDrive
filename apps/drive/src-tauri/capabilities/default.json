@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "Allow the main WebDAV Drive window to receive native exit-cleanup events.",
+  "windows": ["main"],
+  "permissions": ["core:event:allow-listen"]
+}
