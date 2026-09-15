@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 //! `rclone --password-command` 目标程序：把配置加密口令打到 stdout。
 //!
 //! 用法：`drive-pwcmd --key-file <config_key.enc>`

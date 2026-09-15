@@ -69,19 +69,22 @@ impl ManagedChild {
         if let Some(cwd) = &spec.cwd {
             command.current_dir(cwd);
         }
+        foundation_core::process::hide_console(&mut command);
 
-        let child = command.spawn().map_err(|err| {
+        let mut child = command.spawn().map_err(|err| {
             FoundationError::Process(format!("无法启动 {}：{err}", spec.program.display()))
         })?;
 
         if let Some(guard) = &spec.guard {
             if !guard.assign(child.id()) {
-                log::warn!(
-                    "无法把进程 {}（pid {}）加入 {}；宿主被强杀时可能留下孤儿",
+                let pid = child.id();
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(FoundationError::Platform(format!(
+                    "无法把进程 {}（pid {pid}）加入 {}；已终止子进程以避免失去生命周期守卫",
                     spec.program.display(),
-                    child.id(),
                     guard.name()
-                );
+                )));
             }
         }
 
@@ -105,6 +108,21 @@ impl ManagedChild {
     /// 进程是否仍在运行（顺带回收僵尸状态）。
     pub fn is_running(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))
+    }
+
+    /// 等待进程自行退出；超过启动规格中的宽限期则返回 `false`，不主动终止。
+    pub fn wait_for_exit(&mut self) -> Result<bool> {
+        let deadline = Instant::now() + self.stop_grace;
+        loop {
+            match self.child.try_wait() {
+                Ok(Some(_)) => return Ok(true),
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Ok(None) => return Ok(false),
+                Err(err) => return Err(err.into()),
+            }
+        }
     }
 
     /// 轮询直到就绪；进程提前退出或超时都返回明确错误。

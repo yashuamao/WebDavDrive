@@ -103,6 +103,16 @@ impl Connection {
         existing: Option<&Connection>,
         secrets: &dyn SecretStore,
     ) -> Result<Self> {
+        if input.clear_password
+            && input
+                .password
+                .as_deref()
+                .is_some_and(|password| !password.is_empty())
+        {
+            return Err(FoundationError::InvalidInput(
+                "不能同时设置新密码和清除已保存密码".into(),
+            ));
+        }
         let id = input
             .id
             .as_deref()

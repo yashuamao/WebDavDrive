@@ -68,7 +68,11 @@ impl MountProvider for FakeProvider {
         }
         let record = MountRecord {
             fs: format!("{}:", connection.remote),
-            mount_point: connection.drive.clone(),
+            mount_point: if connection.drive == "*" {
+                "Z:".into()
+            } else {
+                connection.drive.clone()
+            },
         };
         self.mounts.lock().unwrap().push(record.clone());
         Ok(record)
@@ -166,6 +170,27 @@ fn delete_keeps_profile_when_remote_delete_fails() {
         provider.mounted().is_empty(),
         "删除流程应先卸载已挂载的连接"
     );
+}
+
+#[test]
+fn automatic_mount_point_is_resolved_by_remote_for_unmount_and_delete() {
+    let dir = temp_dir("automatic-mount-point");
+    let provider = Arc::new(FakeProvider::default());
+    let app = service(&dir, provider.clone());
+
+    let mut automatic = input("自动盘符", "http://auto/dav");
+    automatic.drive = Some("*".into());
+    let saved = app.upsert(automatic).unwrap();
+    let mounted = app.mount(&saved.id).unwrap();
+    assert_eq!(mounted.mount_point, "Z:");
+
+    app.unmount(&saved.id).unwrap();
+    assert!(provider.mounted().is_empty());
+
+    app.mount(&saved.id).unwrap();
+    app.delete(&saved.id).unwrap();
+    assert!(provider.mounted().is_empty());
+    assert!(app.get_view(&saved.id).is_none());
 }
 
 #[test]

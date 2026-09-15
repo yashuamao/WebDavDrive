@@ -1,4 +1,21 @@
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// 让子进程不分配控制台窗口（Windows: `CREATE_NO_WINDOW`；其他平台空操作）。
+///
+/// GUI 宿主需要长期运行；未标记的控制台子进程可能闪出黑框，周期性调用时尤其明显。
+pub fn hide_console(command: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
+}
 
 /// 子进程守卫：宿主死亡时回收子进程（Windows 上由 Job Object 实现）。
 ///

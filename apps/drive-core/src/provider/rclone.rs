@@ -108,16 +108,16 @@ impl RcloneProvider {
         candidates.into_iter().find(|p| p.is_file())
     }
 
-    fn config_is_encrypted(&self) -> bool {
+    fn config_is_encrypted(&self) -> Result<bool> {
         use std::io::Read;
-        let Ok(mut file) = std::fs::File::open(self.config.config_path()) else {
-            return false;
-        };
+        let config_path = self.config.config_path();
+        if !config_path.exists() {
+            return Ok(false);
+        }
+        let mut file = std::fs::File::open(config_path)?;
         let mut head = [0u8; 96];
-        let Ok(read) = file.read(&mut head) else {
-            return false;
-        };
-        String::from_utf8_lossy(&head[..read]).starts_with(ENCRYPTED_MARKER)
+        let read = file.read(&mut head)?;
+        Ok(String::from_utf8_lossy(&head[..read]).starts_with(ENCRYPTED_MARKER))
     }
 
     /// 保证密钥可用并返回它。缺失而配置已加密 → `key_unavailable`（AC-26）。
@@ -129,6 +129,16 @@ impl RcloneProvider {
             .to_string())
     }
 
+    /// 在宿主窗口启动前验证配置密钥状态，避免把加密配置缺钥匙的问题拖到首次操作。
+    pub fn validate_startup(&self) -> Result<()> {
+        std::fs::create_dir_all(&self.config.data_dir)?;
+        let encrypted = self.config_is_encrypted()?;
+        if encrypted || self.config.key_path().exists() {
+            self.ensure_key(encrypted)?;
+        }
+        Ok(())
+    }
+
     /// 确保配置存在且已静态加密（AC-37）。必须在启动 rclone 之前完成。
     fn prepare_config(&self, engine: &Path) -> Result<()> {
         std::fs::create_dir_all(&self.config.data_dir)?;
@@ -137,7 +147,7 @@ impl RcloneProvider {
             std::fs::write(&config_path, b"")?;
         }
 
-        let encrypted = self.config_is_encrypted();
+        let encrypted = self.config_is_encrypted()?;
         self.ensure_key(encrypted)?;
         if encrypted {
             return Ok(());
@@ -148,7 +158,8 @@ impl RcloneProvider {
             ));
         }
 
-        let output = Command::new(engine)
+        let mut command = Command::new(engine);
+        command
             .args([
                 "config",
                 "encryption",
@@ -158,7 +169,9 @@ impl RcloneProvider {
                 "--password-command",
                 self.config.password_command.as_str(),
             ])
-            .stdin(Stdio::null())
+            .stdin(Stdio::null());
+        foundation_core::process::hide_console(&mut command);
+        let output = command
             .output()
             .map_err(|err| FoundationError::Process(format!("执行 rclone 配置加密失败：{err}")))?;
         if !output.status.success() {
@@ -329,8 +342,17 @@ impl RcloneProvider {
 impl RcloneProvider {
     /// 当前引擎进程 pid（未启动为 None）；诊断与回收测试用。
     pub fn engine_pid(&self) -> Option<u32> {
-        let guard = self.engine.lock().unwrap_or_else(|p| p.into_inner());
-        guard.as_ref().map(|engine| engine.child.pid())
+        let mut guard = self.engine.lock().unwrap_or_else(|p| p.into_inner());
+        let running = guard
+            .as_mut()
+            .map(|engine| engine.child.is_running())
+            .unwrap_or(false);
+        if running {
+            guard.as_ref().map(|engine| engine.child.pid())
+        } else {
+            guard.take();
+            None
+        }
     }
 
     /// 读取 remote 的实际配置（诊断/测试用；pass 是 rclone obscure 后的值）。
@@ -353,23 +375,46 @@ impl MountProvider for RcloneProvider {
             running: false,
             rc_addr: Some(self.config.rc_addr.clone()),
         };
-        let guard = self.engine.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(engine) = guard.as_ref() {
-            status.running = true;
-            if let Ok(version) = engine.rc.version() {
-                status.version = version
-                    .get("version")
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
+        let mut guard = self.engine.lock().unwrap_or_else(|p| p.into_inner());
+        let mut exited = false;
+        if let Some(engine) = guard.as_mut() {
+            if !engine.child.is_running() {
+                exited = true;
+            } else {
+                match engine.rc.version() {
+                    Ok(version) => {
+                        status.running = true;
+                        status.version = version
+                            .get("version")
+                            .and_then(Value::as_str)
+                            .map(str::to_string);
+                    }
+                    Err(err) => {
+                        // 进程终止与 RC 端口关闭之间存在短暂竞态；探测失败后再回收一次状态。
+                        if !engine.child.is_running() {
+                            exited = true;
+                        } else {
+                            log::warn!("rclone 进程仍在，但 RC 健康检查失败：{err}");
+                        }
+                    }
+                }
             }
+        }
+        if exited {
+            guard.take();
+            log::warn!("检测到 rclone 进程已退出；下次操作将自动重启引擎");
         }
         status
     }
 
     fn ensure_started(&self) -> Result<()> {
         let mut guard = self.engine.lock().unwrap_or_else(|p| p.into_inner());
-        if guard.is_some() {
-            return Ok(());
+        if let Some(engine) = guard.as_mut() {
+            if engine.child.is_running() {
+                return Ok(());
+            }
+            log::warn!("rclone 进程已意外退出，正在重新启动");
+            guard.take();
         }
         let engine = self.build_engine()?;
         *guard = Some(engine);
@@ -455,8 +500,44 @@ impl MountProvider for RcloneProvider {
             guard.take()
         };
         if let Some(mut engine) = engine {
-            engine.child.stop()?;
+            let mut cleanup_error: Option<String> = None;
+
+            match engine.rc.list_mounts() {
+                Ok(mounts) => {
+                    for mount in mounts {
+                        if let Err(err) = engine.rc.unmount(&mount.mount_point) {
+                            log::error!("退出时卸载 {} 失败：{err}", mount.mount_point);
+                            cleanup_error.get_or_insert_with(|| err.to_string());
+                        }
+                    }
+                }
+                Err(err) => {
+                    log::error!("退出时无法读取挂载列表：{err}");
+                    cleanup_error.get_or_insert_with(|| err.to_string());
+                }
+            }
+
+            let quit_error = engine.rc.quit().err();
+            let exited = match engine.child.wait_for_exit() {
+                Ok(exited) => exited,
+                Err(err) => {
+                    cleanup_error.get_or_insert_with(|| err.to_string());
+                    false
+                }
+            };
+            if !exited {
+                if let Some(err) = quit_error {
+                    log::warn!("rclone 未响应 core/quit：{err}；改为强制停止");
+                }
+                engine.child.stop()?;
+            }
             log::info!("rclone rcd 已停止");
+
+            if let Some(err) = cleanup_error {
+                return Err(FoundationError::Process(format!(
+                    "引擎已停止，但退出前清理挂载失败：{err}"
+                )));
+            }
         }
         Ok(())
     }

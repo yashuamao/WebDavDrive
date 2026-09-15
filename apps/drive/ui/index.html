@@ -7,76 +7,236 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<header>
-  <div class="brand">WebDAV Drive</div>
-  <div class="env" id="env"></div>
-  <div class="hint" id="engine-hint" hidden></div>
-  <div class="spacer"></div>
-  <button id="btn-refresh" class="ghost">刷新</button>
-  <button id="btn-logs" class="ghost">日志</button>
-</header>
-
-<main>
-  <section class="panel">
-    <h2 id="form-title">新建连接</h2>
-    <form id="form" autocomplete="off">
-      <input type="hidden" id="f-id">
-      <label><span>名称</span><input id="f-name" placeholder="我的 NAS" required></label>
-      <label><span>WebDAV 地址</span><input id="f-url" placeholder="https://nas.example.com/dav" required></label>
-      <div class="row">
-        <label><span>用户名</span><input id="f-user" placeholder="alice"></label>
-        <label><span>密码</span><input id="f-password" type="password" placeholder="留空表示不修改"></label>
-      </div>
-      <div class="row">
-        <label><span>服务端类型</span>
-          <select id="f-vendor"></select>
-        </label>
-        <label><span>盘符或目录</span><input id="f-drive" placeholder="X: 或 C:\mnt\nas"></label>
-      </div>
-      <label><span>卷标</span><input id="f-volname" placeholder="留空则用名称"></label>
-      <div class="row">
-        <label><span>VFS 缓存模式</span><select id="f-vfs"></select></label>
-        <label><span>目录缓存时间</span><input id="f-dircache" value="5m"></label>
-      </div>
-      <div class="checks">
-        <label class="check"><input type="checkbox" id="f-network"><span>网络驱动器</span></label>
-        <label class="check"><input type="checkbox" id="f-readonly"><span>只读</span></label>
-        <label class="check"><input type="checkbox" id="f-autostart"><span>开机自动挂载</span></label>
-      </div>
-      <label><span>附加 rclone 参数</span><input id="f-extra" placeholder="--vfs-cache-max-size 10G"></label>
-      <div class="actions">
-        <button type="submit" class="primary" id="btn-save">保存</button>
-        <button type="button" id="btn-reset">清空 / 新建</button>
-      </div>
-    </form>
-  </section>
-
-  <section class="panel">
-    <h2>开机自动挂载</h2>
-    <div id="autostart-box" class="status"></div>
-    <div class="actions" style="margin-top:10px">
-      <select id="autostart-mode" style="width:auto">
-        <option value="logon">登录时（当前用户，推荐）</option>
-        <option value="boot">开机时（SYSTEM，全局盘符）</option>
-      </select>
-      <button type="button" class="primary" id="btn-autostart-on">注册</button>
-      <button type="button" class="danger" id="btn-autostart-off">移除</button>
+<div class="app-shell">
+  <aside class="sidebar" aria-label="主导航">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M5.8 7.5h12.4l2.3 9H3.5l2.3-9Z"/><path d="M7.5 12.5h9"/></svg>
+      </span>
+      <span>WebDAV Drive</span>
     </div>
-    <p class="hint">注册需要管理员权限；boot 模式属主为 SYSTEM，其他账户可能写不进文件。</p>
+
+    <nav class="nav-list">
+      <button class="nav-item active" type="button" data-view="drives" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16l2 10H2L4 7Z"/><path d="M7 13h10"/></svg>
+        <span>驱动器</span>
+      </button>
+      <button class="nav-item" type="button" data-view="autostart">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span>自动挂载</span>
+      </button>
+      <button class="nav-item" type="button" data-view="logs">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6V3Z"/><path d="M15 3v5h4M9 12h6M9 16h6"/></svg>
+        <span>日志</span>
+      </button>
+      <button class="nav-item" type="button" data-view="settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a7.9 7.9 0 0 0 .1-6l2-1.2-2-3.4-2 1.2a8 8 0 0 0-5.1-3V.3h-4v2.3a8 8 0 0 0-5.1 3l-2-1.2-2 3.4 2 1.2a7.9 7.9 0 0 0 .1 6l-2 1.2 2 3.4 2-1.2a8 8 0 0 0 5 2.9v2.4h4v-2.4a8 8 0 0 0 5-2.9l2 1.2 2-3.4-2-1.2Z"/></svg>
+        <span>设置</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-engine" id="sidebar-engine">
+      <span class="status-dot mute" id="sidebar-engine-dot"></span>
+      <span id="sidebar-engine-text">正在检查引擎…</span>
+    </div>
+  </aside>
+
+  <section class="workspace">
+    <main class="page-stack" id="main-content">
+      <section class="view active" id="view-drives" aria-labelledby="drives-title">
+        <header class="page-header">
+          <div>
+            <div class="title-row">
+              <h1 id="drives-title">我的驱动器</h1>
+              <span class="count" id="profile-count">0 个连接</span>
+            </div>
+            <p>管理 WebDAV 连接与本地挂载状态</p>
+          </div>
+          <button class="button primary" type="button" id="btn-new">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            新建连接
+          </button>
+        </header>
+
+        <div class="exit-alert" id="exit-alert" role="alert" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5M12 17.5h.01"/></svg>
+          <div class="exit-alert-copy">
+            <strong>部分虚拟硬盘无法卸载，软件尚未退出</strong>
+            <span id="exit-error-text"></span>
+          </div>
+          <div class="exit-alert-actions">
+            <button class="button" type="button" id="btn-retry-exit">重试退出</button>
+            <button class="button danger" type="button" id="btn-force-exit">强制退出</button>
+          </div>
+        </div>
+
+        <div class="drive-workspace">
+          <section class="drive-list-pane" aria-label="已保存的连接">
+            <div id="profiles" class="profiles"></div>
+          </section>
+          <aside class="detail-pane" id="profile-detail" aria-live="polite"></aside>
+        </div>
+      </section>
+
+      <section class="view narrow-view" id="view-autostart" aria-labelledby="autostart-title" hidden>
+        <header class="page-header">
+          <div>
+            <h1 id="autostart-title">自动挂载</h1>
+            <p>选择应用在登录或系统启动时的运行方式</p>
+          </div>
+        </header>
+        <section class="settings-card">
+          <div class="section-heading">
+            <div>
+              <h2>启动任务</h2>
+              <p>注册需要管理员权限</p>
+            </div>
+            <div id="autostart-box" class="status"></div>
+          </div>
+          <div class="setting-row">
+            <div>
+              <strong>启动模式</strong>
+              <p>登录模式适合当前用户；开机模式使用 SYSTEM 全局盘符。</p>
+            </div>
+            <select id="autostart-mode" aria-label="自动挂载启动模式">
+              <option value="logon">登录时（当前用户，推荐）</option>
+              <option value="boot">开机时（SYSTEM，全局盘符）</option>
+            </select>
+          </div>
+          <div class="card-actions">
+            <button type="button" class="button primary" id="btn-autostart-on">注册任务</button>
+            <button type="button" class="button danger" id="btn-autostart-off">移除任务</button>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" id="view-logs" aria-labelledby="logs-title" hidden>
+        <header class="page-header">
+          <div>
+            <h1 id="logs-title">运行日志</h1>
+            <p>查看最近的引擎与挂载事件</p>
+          </div>
+          <button class="button" type="button" id="btn-reload-logs">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+            刷新日志
+          </button>
+        </header>
+        <section class="log-card">
+          <pre id="log" tabindex="0">暂无日志</pre>
+        </section>
+      </section>
+
+      <section class="view narrow-view" id="view-settings" aria-labelledby="settings-title" hidden>
+        <header class="page-header">
+          <div>
+            <h1 id="settings-title">设置</h1>
+            <p>查看运行环境与凭据存储状态</p>
+          </div>
+        </header>
+        <section class="settings-card">
+          <div class="section-heading">
+            <div>
+              <h2>运行环境</h2>
+              <p>应用自动检测 rclone 与本机凭据保护</p>
+            </div>
+          </div>
+          <div class="env" id="env"></div>
+          <div class="inline-alert" id="engine-hint" hidden></div>
+        </section>
+        <section class="settings-card">
+          <div class="section-heading">
+            <div>
+              <h2>退出行为</h2>
+              <p>保证虚拟硬盘不会在软件退出后残留于“此电脑”</p>
+            </div>
+            <span class="badge ok">已启用</span>
+          </div>
+          <div class="setting-row">
+            <div>
+              <strong>退出前自动卸载全部驱动器</strong>
+              <p>关闭窗口只隐藏到托盘；从托盘退出时，确认全部盘符消失后才关闭软件。</p>
+            </div>
+            <div class="exit-behavior" aria-label="退出前自动卸载全部驱动器已启用">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 9.2 17 19 7"/></svg>
+              <span>始终执行</span>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer class="statusbar">
+      <div class="engine-summary">
+        <span class="status-dot mute" id="engine-dot"></span>
+        <span id="engine-text">正在检查 rclone 引擎…</span>
+      </div>
+      <div class="status-actions">
+        <button type="button" class="text-button" id="btn-refresh">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+          刷新
+        </button>
+        <span class="status-divider" aria-hidden="true"></span>
+        <button type="button" class="text-button" id="btn-logs">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6V3Z"/><path d="M15 3v5h4M9 12h6M9 16h6"/></svg>
+          查看日志
+        </button>
+      </div>
+    </footer>
   </section>
+</div>
 
-  <section class="panel">
-    <h2>已保存的连接</h2>
-    <div id="profiles" class="profiles"></div>
-  </section>
-</main>
+<dialog id="connection-dialog" aria-labelledby="form-title">
+  <form id="form" autocomplete="off">
+    <header class="dialog-header">
+      <div>
+        <h2 id="form-title">新建连接</h2>
+        <p>配置 WebDAV 服务与本地挂载选项</p>
+      </div>
+      <button type="button" class="icon-button" id="btn-dialog-close" aria-label="关闭">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
 
-<section class="panel log-panel" id="log-panel" hidden>
-  <h2>日志</h2>
-  <pre id="log"></pre>
-</section>
+    <div class="dialog-body">
+      <input type="hidden" id="f-id">
+      <section class="form-section">
+        <h3>连接信息</h3>
+        <div class="form-grid">
+          <label class="field"><span>名称</span><input id="f-name" placeholder="我的 NAS" required></label>
+          <label class="field"><span>服务端类型</span><select id="f-vendor"></select></label>
+          <label class="field full"><span>WebDAV 地址</span><input id="f-url" placeholder="https://nas.example.com/dav" required></label>
+          <label class="field"><span>用户名</span><input id="f-user" placeholder="alice"></label>
+          <label class="field"><span>密码</span><input id="f-password" type="password" placeholder="留空表示不修改"></label>
+        </div>
+        <label class="check field-check"><input type="checkbox" id="f-clear-password"><span>清除已保存密码</span></label>
+      </section>
 
-<div class="toast" id="toast"></div>
+      <section class="form-section">
+        <h3>挂载选项</h3>
+        <div class="form-grid">
+          <label class="field"><span>盘符或目录</span><input id="f-drive" placeholder="X: 或 C:\mnt\nas"></label>
+          <label class="field"><span>卷标</span><input id="f-volname" placeholder="留空则使用名称"></label>
+          <label class="field"><span>VFS 缓存模式</span><select id="f-vfs"></select></label>
+          <label class="field"><span>目录缓存时间</span><input id="f-dircache" value="5m"></label>
+        </div>
+        <div class="checks">
+          <label class="check"><input type="checkbox" id="f-network"><span>网络驱动器</span></label>
+          <label class="check"><input type="checkbox" id="f-readonly"><span>只读</span></label>
+          <label class="check"><input type="checkbox" id="f-autostart"><span>启动时自动挂载</span></label>
+        </div>
+        <label class="field"><span>附加 rclone 参数</span><input id="f-extra" placeholder="--vfs-cache-max-size 10G"></label>
+      </section>
+    </div>
+
+    <footer class="dialog-footer">
+      <button type="button" class="button" id="btn-reset">取消</button>
+      <button type="submit" class="button primary" id="btn-save">保存连接</button>
+    </footer>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <script src="app.js"></script>
 </body>
 </html>

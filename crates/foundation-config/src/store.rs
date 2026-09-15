@@ -57,7 +57,7 @@ impl FileStore {
         }
         let raw = fs::read_to_string(&self.path)?;
         if raw.trim().is_empty() {
-            // 空文件按缺失处理（旧版新建 rclone.conf 也是 0 字节）
+            // 空文件按缺失处理，便于调用方先占位、再由后续流程写入正式内容。
             return Ok(LoadOutcome::Missing);
         }
 

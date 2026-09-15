@@ -1,8 +1,10 @@
 #![cfg(windows)]
 
 use std::net::TcpListener;
+use std::sync::Arc;
 use std::time::Duration;
 
+use foundation_core::ChildGuard;
 use foundation_supervisor::{ManagedChild, Readiness, Spec};
 
 /// 一个能活几秒、不需要控制台输入的进程。
@@ -69,4 +71,26 @@ fn missing_program_fails_cleanly() {
     let spec = Spec::new(r"C:\definitely\not\here\nope.exe");
     let err = ManagedChild::spawn(&spec).unwrap_err();
     assert_eq!(err.code(), "process");
+}
+
+struct RejectingGuard;
+
+impl ChildGuard for RejectingGuard {
+    fn assign(&self, _pid: u32) -> bool {
+        false
+    }
+
+    fn name(&self) -> &'static str {
+        "rejecting-test-guard"
+    }
+}
+
+#[test]
+fn rejected_lifecycle_guard_fails_closed() {
+    let mut spec = ping_spec();
+    spec.guard = Some(Arc::new(RejectingGuard));
+
+    let err = ManagedChild::spawn(&spec).unwrap_err();
+    assert_eq!(err.code(), "platform");
+    assert!(err.to_string().contains("已终止子进程"), "{err}");
 }

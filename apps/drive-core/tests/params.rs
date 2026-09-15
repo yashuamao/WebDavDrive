@@ -184,4 +184,13 @@ fn password_lifecycle_keeps_or_clears() {
     };
     let cleared = Connection::from_input(clear, Some(&created), secrets.as_ref()).unwrap();
     assert!(cleared.password_enc.is_none());
+
+    let conflict = ConnectionInput {
+        id: Some(created.id.clone()),
+        url: Some("http://nas/dav".into()),
+        password: Some("replacement".into()),
+        clear_password: true,
+        ..Default::default()
+    };
+    assert!(Connection::from_input(conflict, Some(&created), secrets.as_ref()).is_err());
 }

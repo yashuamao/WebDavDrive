@@ -9,6 +9,10 @@ use std::path::Path;
 use foundation_core::{FoundationError, Result};
 use serde::Serialize;
 
+pub const TASK_NAME_BOOT: &str = "WebDavDrive-Agent";
+pub const TASK_NAME_LOGON: &str = "WebDavDrive-Agent-User";
+const TASK_DESCRIPTION: &str = "WebDAV Drive：启动托盘宿主并挂载所有已启用自动挂载的连接。";
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AutostartStatus {
     pub installed: bool,
@@ -30,7 +34,7 @@ impl AutostartStatus {
 pub fn status() -> Result<AutostartStatus> {
     #[cfg(windows)]
     {
-        use foundation_windows::task::{self, TASK_NAME_BOOT, TASK_NAME_LOGON};
+        use foundation_windows::task;
         if task::status(TASK_NAME_BOOT)? {
             return Ok(AutostartStatus {
                 installed: true,
@@ -73,17 +77,40 @@ pub fn install(mode: &str, executable: &Path, extra_args: &[String]) -> Result<A
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| std::path::PathBuf::from("."));
-        let spec = if mode == "boot" {
-            TaskSpec::boot(executable, extra_args, &working_dir)
+        let (spec, obsolete_task) = if mode == "boot" {
+            (
+                TaskSpec::boot(
+                    TASK_NAME_BOOT,
+                    TASK_DESCRIPTION,
+                    executable,
+                    extra_args,
+                    &working_dir,
+                ),
+                TASK_NAME_LOGON,
+            )
         } else {
-            TaskSpec::logon(
-                executable,
-                extra_args,
-                &working_dir,
-                current_account().unwrap_or_default(),
+            let account = current_account().ok_or_else(|| {
+                FoundationError::Platform("无法确定当前 Windows 账户，不能注册登录任务".into())
+            })?;
+            (
+                TaskSpec::logon(
+                    TASK_NAME_LOGON,
+                    TASK_DESCRIPTION,
+                    executable,
+                    extra_args,
+                    &working_dir,
+                    account,
+                ),
+                TASK_NAME_BOOT,
             )
         };
         task::install(&spec)?;
+        if let Err(err) = task::uninstall(obsolete_task) {
+            let _ = task::uninstall(&spec.name);
+            return Err(FoundationError::Platform(format!(
+                "切换自启模式时无法移除旧任务 {obsolete_task}：{err}；已回滚新任务"
+            )));
+        }
         log::info!("已注册自启任务：{}（{mode}）", spec.name);
         status()
     }
@@ -100,7 +127,7 @@ pub fn install(mode: &str, executable: &Path, extra_args: &[String]) -> Result<A
 pub fn uninstall() -> Result<AutostartStatus> {
     #[cfg(windows)]
     {
-        use foundation_windows::task::{self, TASK_NAME_BOOT, TASK_NAME_LOGON};
+        use foundation_windows::task;
         task::uninstall(TASK_NAME_BOOT)?;
         task::uninstall(TASK_NAME_LOGON)?;
         log::info!("已移除自启任务");

@@ -165,8 +165,36 @@ fn encrypted_config_without_key_refuses_to_start() {
     std::fs::remove_file(dir.join("config_key.enc")).unwrap();
 
     let (provider2, _) = make_provider(&dir, provider.config().rclone_path.clone().unwrap());
-    let err = provider2.ensure_started().unwrap_err();
+    let err = provider2.validate_startup().unwrap_err();
     assert_eq!(err.code(), "key_unavailable", "{err}");
+}
+
+#[cfg(windows)]
+#[test]
+fn crashed_engine_is_detected_and_restarted() {
+    let Some(rclone) = find_rclone() else {
+        eprintln!("SKIP: 找不到 rclone.exe");
+        return;
+    };
+    let dir = temp_dir("restart-after-crash");
+    let (provider, _) = make_provider(&dir, rclone);
+    provider.ensure_started().expect("首次启动应成功");
+    let old_pid = provider.engine_pid().expect("应记录引擎 pid");
+
+    let mut command = std::process::Command::new("taskkill");
+    command.args(["/PID", &old_pid.to_string(), "/F"]);
+    foundation_core::process::hide_console(&mut command);
+    let output = command.output().expect("应能调用 taskkill");
+    assert!(output.status.success(), "taskkill 失败：{output:?}");
+
+    assert!(
+        !provider.engine_status().running,
+        "被终止的引擎不能继续报告为运行中"
+    );
+    provider.ensure_started().expect("操作应自动重启引擎");
+    let new_pid = provider.engine_pid().expect("重启后应记录新 pid");
+    assert_ne!(new_pid, old_pid);
+    provider.shutdown().unwrap();
 }
 
 /// 不带 Authorization 直接请求 RC，读取 HTTP 状态码。

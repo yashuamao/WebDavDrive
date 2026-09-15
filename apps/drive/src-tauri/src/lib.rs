@@ -3,6 +3,7 @@
 mod commands;
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use drive_core::provider::{EngineConfig, RcloneProvider};
@@ -11,7 +12,7 @@ use foundation_core::{install_logger, RingLog};
 use log::LevelFilter;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
 use commands::AppState;
 
@@ -42,10 +43,54 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+pub(crate) fn begin_graceful_exit(app: &AppHandle) {
+    let service = {
+        let state = app.state::<AppState>();
+        if state.exit_in_progress.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        state.service.clone()
+    };
+
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        log::info!("收到退出请求：开始取消全部挂载");
+        let result = service
+            .unmount_all_and_confirm()
+            .and_then(|_| service.shutdown());
+        match result {
+            Ok(()) => {
+                log::info!("全部虚拟硬盘已移除，正在退出应用");
+                handle.exit(0);
+            }
+            Err(err) => {
+                handle
+                    .state::<AppState>()
+                    .exit_in_progress
+                    .store(false, Ordering::Release);
+                log::error!("退出前取消挂载失败，已中止退出：{err}");
+                show_main(&handle);
+                if let Err(emit_err) = handle.emit("exit-cleanup-failed", err.to_string()) {
+                    log::error!("发送退出失败提示失败：{emit_err}");
+                }
+            }
+        }
+    });
+}
+
 fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
+    // 托盘图标只在这里创建，且必须只创建一次：`tauri.conf.json` 里若声明 `app.trayIcon`，
+    // Tauri 会在 `build()` 阶段（setup 之前）自动再建一个 id 为 "main"、没有菜单的托盘图标，
+    // 托盘区就会出现两个图标，且配置生成的那个点了没反应。
+    if app.config().app.tray_icon.is_some() {
+        log::warn!(
+            "tauri.conf.json 声明了 app.trayIcon，会与 setup_tray 重复创建托盘图标，应移除该配置"
+        );
+    }
+
     let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
     let engine = MenuItem::with_id(app, "engine-start", "启动引擎", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出并卸载所有驱动器", true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(app, &[&show, &engine, &separator, &quit])?;
 
@@ -69,7 +114,7 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
                     }
                 });
             }
-            "quit" => app.exit(0),
+            "quit" => begin_graceful_exit(app),
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {
@@ -99,7 +144,11 @@ pub fn run() {
     #[cfg(windows)]
     match foundation_windows::acl::harden_data_dir(&data_dir) {
         Ok(()) => log::info!("数据目录权限已收紧：{}", data_dir.display()),
-        Err(err) => log::error!("数据目录 ACL 收紧失败：{err}"),
+        Err(err) => {
+            log::error!("数据目录 ACL 收紧失败，已拒绝启动：{err}");
+            log.close();
+            panic!("无法安全启动：数据目录 ACL 收紧失败：{err}");
+        }
     }
 
     let secrets = foundation_secrets::default_store(data_dir.join("keystore.bin"));
@@ -115,10 +164,17 @@ pub fn run() {
     let mut engine = EngineConfig::new(&data_dir, "127.0.0.1:5572");
     engine.password_command = password_command(&engine.key_path());
     let provider = Arc::new(RcloneProvider::new(engine, secrets));
+    if let Err(err) = provider.validate_startup() {
+        log::error!("验证 rclone 配置密钥失败，已拒绝启动：{err}");
+        log.close();
+        panic!("无法启动：{err}");
+    }
     let service = Arc::new(AppService::new(store, provider));
     let state = AppState {
         service: service.clone(),
         log: log.clone(),
+        exit_in_progress: AtomicBool::new(false),
+        force_exit: AtomicBool::new(false),
     };
 
     tauri::Builder::default()
@@ -134,9 +190,12 @@ pub fn run() {
             commands::probe_connection,
             commands::mount_connection,
             commands::unmount_connection,
+            commands::open_connection,
             commands::list_mounts,
             commands::ensure_engine,
             commands::shutdown_engine,
+            commands::exit_application,
+            commands::force_exit,
             commands::logs,
             commands::autostart_status,
             commands::install_autostart,
@@ -171,8 +230,30 @@ pub fn run() {
         .run(|app, event| {
             if let RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<AppState>() {
-                    let _ = state.service.shutdown();
+                    if state.force_exit.load(Ordering::Acquire) {
+                        log::warn!("用户选择强制退出，跳过等待卸载确认");
+                    } else if let Err(err) = state.service.shutdown() {
+                        log::error!("退出清理失败：{err}");
+                    }
+                    state.log.close();
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    /// 托盘图标只能由 `setup_tray()` 创建一次。
+    ///
+    /// `tauri.conf.json` 的 `app.trayIcon` 会让 Tauri 在 `build()` 阶段（setup 之前）
+    /// 再自动创建一个 id 为 `main`、没有菜单的托盘图标，托盘区就会出现两个图标，
+    /// 且配置生成的那个点击无反应。此测试锁死「配置里不声明托盘图标」这一约束。
+    #[test]
+    fn tray_icon_is_not_declared_in_config() {
+        let context: tauri::Context<tauri::Wry> = tauri::generate_context!();
+        assert!(
+            context.config().app.tray_icon.is_none(),
+            "tauri.conf.json 不应声明 app.trayIcon：它会与 setup_tray() 重复创建托盘图标（见 CHANGELOG 0.1.1）"
+        );
+    }
 }

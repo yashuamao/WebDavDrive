@@ -1,5 +1,86 @@
 # 变更日志
 
+## 0.1.1 — 2026-09-15
+
+首次公开版本：
+
+- 重建桌面界面，以 RaiDrive 的连接管理体验为视觉参考；
+- 支持从连接卡片直接在资源管理器中打开已挂载驱动器；
+- 托盘“退出并卸载所有驱动器”会先卸载并确认挂载消失，再结束 rclone 与应用；
+- 若退出卸载失败，界面会显示失败项并提供重试或强制退出；
+- 项目改为 MIT 开源，补齐 rclone、WinFsp、Tauri 的第三方项目说明与发布包许可文件；
+- 修复 CMD 窗口闪现和托盘双图标问题。
+
+### CMD 窗口闪现
+
+现象：GUI 宿主运行期间反复弹出 CMD/控制台窗口，一闪即退。
+
+原因：所有子进程都从 GUI 进程启动，但未标记 `CREATE_NO_WINDOW`，且 `drive-pwcmd.exe`
+是控制台子系统程序：
+
+| 子进程 | 触发频率 | 说明 |
+|---|---|---|
+| `schtasks /Query` ×2 | **每 5 秒**（界面 `autostart_status` 轮询） | 最主要的“一直弹”来源 |
+| `schtasks /Create|/Delete` | 注册/移除自启时 | |
+| `icacls` | 每次启动收紧 ACL | |
+| `rclone.exe`（引擎） | 引擎启动 / 配置加密迁移 | 控制台程序 |
+| `drive-pwcmd.exe` | rclone 每次读取配置口令 | 控制台程序，被 rclone 反复调用 |
+
+修复：
+
+- `foundation-core::process::hide_console()`：统一给子进程加 `CREATE_NO_WINDOW`
+  （非 Windows 空操作）；`icacls`、`schtasks`（查/建/删）、`rclone` 引擎、
+  `rclone config encryption set` 全部接入；
+- `drive-pwcmd` 标记 `#![windows_subsystem = "windows"]`：rclone 调用它時不再分配控制台，
+  stdout 仍通过管道交给 rclone，不影响 `--password-command`；
+- 界面不再每 5 秒查询自启状态（实测每 5 秒 2 次 `schtasks` + 2 个 `conhost`，即每分钟
+  24 次进程创建）；改为启动时、手动「刷新」以及注册/移除操作后查询；
+- 说明：`target\debug\drive.exe` 是调试构建，本身会保留一个控制台窗口（设计如此）；
+  发布/打包产物为 `windows_subsystem = "windows"`，无控制台。
+
+### 托盘双图标（同轮修复）
+
+现象：托盘区出现两个 WebDAV Drive 图标，其中一个右键无菜单、点击无反应。
+
+原因：托盘图标被创建了两次。
+
+- `tauri.conf.json` 的 `app.trayIcon` 会让 Tauri 在 `build()` 阶段（`setup` 钩子之前）
+  自动创建一个 id 为 `main` 的托盘图标（tauri 2.11.5 `src/app.rs` 的
+  "initialize default tray icon if defined"）；它既没有菜单，也没有本应用注册的
+  点击/菜单事件处理器，所以「点了没反应」；
+- `setup_tray()` 又用 `TrayIconBuilder::new()` 创建了第二个（有菜单、左键显示主窗口）。
+
+修复：
+
+- 删除 `tauri.conf.json` 的 `app.trayIcon`，托盘图标只由 `setup_tray()` 创建一次；
+  `tray-icon` feature 已在 `apps/drive/src-tauri/Cargo.toml` 显式启用，不再依赖该配置；
+- 防回归：`setup_tray()` 检测到配置里仍有 `trayIcon` 时记 warning；
+  新增单测 `tray_icon_is_not_declared_in_config`（把配置临时加回去验证过会 FAILED）；
+- 附带收益：单实例插件在 `build()` 之后才初始化，此前第二个实例会在退出前先建出
+  配置托盘图标（托盘闪一下多一个图标）；去掉配置后不再出现。
+
+验证状态（2026-09-15，`--test-threads=1`）：
+
+- `cargo test --offline --workspace -- --test-threads=1`：**67 项通过 / 0 失败 / 0 忽略**；
+  真机项（DPAPI、ACL/Job、真实 rclone 集成、引擎回收、WinFsp 挂载 E2E）全部实际执行并通过；
+- `cargo check --offline --workspace`、`cargo build --offline --release -p drive -p drive-core`：通过；
+- 打包：`package-windows.ps1` 现在**找不到 rclone.exe 直接报错退出**（不再静默产出
+  缺引擎的包），并新增 `Z:\AI\webdav-drive\bin\rclone.exe` 作为开发机回退候选（与 drive-core
+  集成测试的查找约定一致）；公开版产物为 `dist\WebDavDrive-0.1.1\` 与 `WebDavDrive-0.1.1.zip`，
+  **包含 rclone v1.75.1**、项目 MIT 许可和第三方声明（ZIP SHA-256：
+  `0E24342D9A56DC6B93A693DF6B3F7B5887E9FFA3BFF7906A048B2B175E305FE9`）；
+- 真机验证：启动打包产物，主界面显示「**rclone 已找到**」（bundled 引擎被识别）；
+- 注意：`scripts\package-windows.ps1` 必须保存为 UTF-8 **BOM**——本轮编辑丢过一次 BOM，
+  Windows PowerShell 5.1 按 ANSI 读中文后直接语法错误（已补回，见 0.1.0 P4 记录的同类坑）；
+- 真机托盘 A/B（用 UI Automation 读 Win11 托盘「隐藏的图标」区，同机同环境）：
+  - 修复前二进制（临时把 `app.trayIcon` 加回再构建）：该区共 10 个图标，其中
+    `WebDAV Drive`（代码创建、有菜单）与一个**无名图标**（配置自动创建、无 tooltip/无菜单）并存；
+  - 修复后二进制：该区共 9 个，只剩 `WebDAV Drive` 一个；
+- **仍待人工确认**：CMD 窗口闪现是否彻底消失（托盘图标项已真机验证）。
+- 环境备注：本会话的 `pwsh` 工具沙箱里，cargo 拉起 build script 会被系统拒绝执行
+  （`os error 5 拒绝访问`）；从 bash 调 cargo、或 `powershell.exe -File scripts\package-windows.ps1`
+  跑打包脚本均正常（打包脚本已按此方式完整跑通）。
+
 ## 0.1.0 — 2026-09-12
 
 新仓库起点：底座边界、规格回收与第一批通用 crates。旧 Python 版（`Z:\AI\webdav-drive`）

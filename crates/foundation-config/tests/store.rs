@@ -23,7 +23,7 @@ fn missing_and_empty_are_missing() {
 fn roundtrip_writes_versioned_envelope() {
     let dir = temp_dir("roundtrip");
     let store = FileStore::new(dir.join("profiles.json"));
-    let data = json!({"profiles": [{"id": "webdav-1", "name": "NAS"}]});
+    let data = json!({"items": [{"id": "item-1", "name": "Example"}]});
 
     store.save(&data).unwrap();
     match store.load().unwrap() {

@@ -1,16 +1,19 @@
 //! Tauri 命令：只做参数/错误转换，业务全部在 `drive_core::AppService`。
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use drive_core::model::ConnectionInput;
 use drive_core::provider::MountRecord;
 use drive_core::{AppService, AppStatus, AutostartStatus, ConnectionView, ProbeReport};
 use foundation_core::RingLog;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 pub struct AppState {
     pub service: Arc<AppService>,
     pub log: Arc<RingLog>,
+    pub exit_in_progress: AtomicBool,
+    pub force_exit: AtomicBool,
 }
 
 fn message(err: impl std::fmt::Display) -> String {
@@ -47,12 +50,41 @@ pub fn probe_connection(state: State<'_, AppState>, id: String) -> Result<ProbeR
 
 #[tauri::command]
 pub fn mount_connection(state: State<'_, AppState>, id: String) -> Result<MountRecord, String> {
+    if state.exit_in_progress.load(Ordering::Acquire) {
+        return Err("应用正在退出，暂不能创建新挂载".into());
+    }
     state.service.mount(&id).map_err(message)
 }
 
 #[tauri::command]
 pub fn unmount_connection(state: State<'_, AppState>, id: String) -> Result<(), String> {
     state.service.unmount(&id).map_err(message)
+}
+
+#[tauri::command]
+pub fn open_connection(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let connection = state
+        .service
+        .get_view(&id)
+        .ok_or_else(|| format!("连接 {id} 不存在"))?;
+    let remote = format!("{}:", connection.remote);
+    let mount = state
+        .service
+        .status()
+        .mounts
+        .into_iter()
+        .find(|mount| {
+            mount.fs.eq_ignore_ascii_case(&remote)
+                || (connection.drive != "*"
+                    && mount.mount_point.eq_ignore_ascii_case(&connection.drive))
+        })
+        .ok_or_else(|| format!("连接「{}」尚未挂载", connection.name))?;
+
+    std::process::Command::new("explorer.exe")
+        .arg(&mount.mount_point)
+        .spawn()
+        .map_err(|err| format!("无法打开 {}：{err}", mount.mount_point))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -69,6 +101,17 @@ pub fn ensure_engine(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn shutdown_engine(state: State<'_, AppState>) -> Result<(), String> {
     state.service.shutdown().map_err(message)
+}
+
+#[tauri::command]
+pub fn exit_application(app: AppHandle) {
+    crate::begin_graceful_exit(&app);
+}
+
+#[tauri::command]
+pub fn force_exit(app: AppHandle, state: State<'_, AppState>) {
+    state.force_exit.store(true, Ordering::Release);
+    app.exit(1);
 }
 
 #[tauri::command]

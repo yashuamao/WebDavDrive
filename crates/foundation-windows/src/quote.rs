@@ -73,8 +73,8 @@ mod tests {
     fn spaces_get_quoted() {
         assert_eq!(quote_arg(r"C:\My Data"), r#""C:\My Data""#);
         assert_eq!(
-            command_line(["--data-dir", r"C:\My Data\WebDavDrive"]),
-            r#"--data-dir "C:\My Data\WebDavDrive""#
+            command_line(["--data-dir", r"C:\My Data\AgentData"]),
+            r#"--data-dir "C:\My Data\AgentData""#
         );
     }
 

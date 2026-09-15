@@ -13,9 +13,6 @@ use foundation_core::{FoundationError, Result};
 
 use crate::quote;
 
-pub const TASK_NAME_BOOT: &str = "WebDavDrive-Agent";
-pub const TASK_NAME_LOGON: &str = "WebDavDrive-Agent-User";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskMode {
     /// 开机、SYSTEM、盘符全局可见。
@@ -46,6 +43,7 @@ impl TaskMode {
 #[derive(Debug, Clone)]
 pub struct TaskSpec {
     pub name: String,
+    pub description: String,
     pub executable: PathBuf,
     pub arguments: String,
     pub working_dir: PathBuf,
@@ -56,12 +54,15 @@ pub struct TaskSpec {
 
 impl TaskSpec {
     pub fn boot(
+        name: impl Into<String>,
+        description: impl Into<String>,
         executable: impl Into<PathBuf>,
         args: &[String],
         working_dir: impl Into<PathBuf>,
     ) -> Self {
         Self {
-            name: TASK_NAME_BOOT.to_string(),
+            name: name.into(),
+            description: description.into(),
             executable: executable.into(),
             arguments: quote::command_line(args),
             working_dir: working_dir.into(),
@@ -71,13 +72,16 @@ impl TaskSpec {
     }
 
     pub fn logon(
+        name: impl Into<String>,
+        description: impl Into<String>,
         executable: impl Into<PathBuf>,
         args: &[String],
         working_dir: impl Into<PathBuf>,
         account: impl Into<String>,
     ) -> Self {
         Self {
-            name: TASK_NAME_LOGON.to_string(),
+            name: name.into(),
+            description: description.into(),
             executable: executable.into(),
             arguments: quote::command_line(args),
             working_dir: working_dir.into(),
@@ -123,7 +127,7 @@ pub fn render_xml(spec: &TaskSpec) -> String {
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>WebDAV Drive: starts the local agent and mounts every profile marked 开机自动挂载.</Description>
+    <Description>{description}</Description>
     <URI>\{name}</URI>
   </RegistrationInfo>
   <Triggers>{trigger}</Triggers>
@@ -150,6 +154,7 @@ pub fn render_xml(spec: &TaskSpec) -> String {
 </Task>
 "#,
         name = escape(&spec.name),
+        description = escape(&spec.description),
         trigger = trigger,
         principal = principal,
         command = escape(&spec.executable.to_string_lossy()),
@@ -166,10 +171,13 @@ pub fn install(spec: &TaskSpec) -> Result<()> {
         let xml_path = std::env::temp_dir().join(format!("{}.xml", spec.name));
         write_utf16_with_bom(&xml_path, &xml)?;
 
-        let output = std::process::Command::new("schtasks")
+        let mut command = std::process::Command::new("schtasks");
+        command
             .args(["/Create", "/TN", &spec.name, "/XML"])
             .arg(&xml_path)
-            .arg("/F")
+            .arg("/F");
+        foundation_core::process::hide_console(&mut command);
+        let output = command
             .output()
             .map_err(|err| FoundationError::Platform(format!("无法执行 schtasks：{err}")))?;
         let _ = std::fs::remove_file(&xml_path);
@@ -198,8 +206,10 @@ pub fn install(spec: &TaskSpec) -> Result<()> {
 pub fn uninstall(name: &str) -> Result<()> {
     #[cfg(windows)]
     {
-        let output = std::process::Command::new("schtasks")
-            .args(["/Delete", "/TN", name, "/F"])
+        let mut command = std::process::Command::new("schtasks");
+        command.args(["/Delete", "/TN", name, "/F"]);
+        foundation_core::process::hide_console(&mut command);
+        let output = command
             .output()
             .map_err(|err| FoundationError::Platform(format!("无法执行 schtasks：{err}")))?;
         if output.status.success() || !status(name)? {
@@ -223,8 +233,10 @@ pub fn uninstall(name: &str) -> Result<()> {
 pub fn status(name: &str) -> Result<bool> {
     #[cfg(windows)]
     {
-        let output = std::process::Command::new("schtasks")
-            .args(["/Query", "/TN", name])
+        let mut command = std::process::Command::new("schtasks");
+        command.args(["/Query", "/TN", name]);
+        foundation_core::process::hide_console(&mut command);
+        let output = command
             .output()
             .map_err(|err| FoundationError::Platform(format!("无法执行 schtasks：{err}")))?;
         Ok(output.status.success())
@@ -254,6 +266,8 @@ mod tests {
 
     fn boot_spec() -> TaskSpec {
         TaskSpec::boot(
+            "Foundation-Test-Boot",
+            "Starts the test process.",
             r"C:\py\pythonw.exe",
             &[
                 "--service".into(),
@@ -294,7 +308,13 @@ mod tests {
 
     #[test]
     fn xml_escapes_injection_in_paths() {
-        let spec = TaskSpec::boot(r"C:\a&b\<evil>.exe", &["--flag".into()], r#"C:\dir"quote"#);
+        let spec = TaskSpec::boot(
+            "Foundation-Test-Escape",
+            "Escape test",
+            r"C:\a&b\<evil>.exe",
+            &["--flag".into()],
+            r#"C:\dir"quote"#,
+        );
         let xml = render_xml(&spec);
         assert!(xml.contains("&amp;"));
         assert!(xml.contains("&lt;evil&gt;"));

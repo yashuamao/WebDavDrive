@@ -105,9 +105,9 @@ rclone provider 细节沿用旧版已验证结论：`rclone rcd` + 随机 RC 口
 |---|---|---|
 | P0 规格回捞 ✅ | `docs/requirements.md`、ADR、旧文档归档 | 已完成 |
 | P1 底座 ✅ | core/config/secrets/windows/supervisor 实现 + 单元测试 | 已完成，测试全绿 |
-| P2 挂载 MVP ✅ | `apps/drive-core`（模型/参数/存储/rclone provider/服务）+ Tauri 宿主 | 引擎/配置/安全路径已验收；挂载成功路径待 WinFsp 真机 |
-| P3 托盘 UI ✅ | 托盘/单实例/日志面板/自启注册/无构建 UI 完成；Vue 迁移按需（ADR-0005） | AC-01..18/23..37 自动化通过；AC-28/38 待真机 |
-| P4 交付（部分） | 自启注册/退出清理/打包脚本/release 构建完成；真机挂载验收通过 | AC-28/38 真机通过；WinFsp 许可决策、签名、安装器待定 |
+| P2 挂载 MVP ✅ | `apps/drive-core`（模型/参数/存储/rclone provider/服务）+ Tauri 宿主 | 引擎、配置、安全路径及 WinFsp 真机挂载已验收 |
+| P3 托盘 UI ✅ | 托盘/单实例/日志面板/自启注册/无构建 UI 完成；Vue 迁移按需（ADR-0005） | 自动化与 AC-28/38 真机检查通过 |
+| P4 交付（部分） | 自启注册/退出清理/打包脚本/release 构建完成；真机挂载验收通过 | AC-28/38 真机通过；FLOSS 许可路线已定，签名、安装器待定 |
 | P5 可选 | Windows 原生 WebClient provider；`foundation-server` 管理页 | 按需 |
 | P6 Koma 试点 | 用 `foundation-windows`/`foundation-supervisor` 落 Koma Phase 5 一个小切片 | 不阻塞 Koma 主线 |
 
@@ -117,6 +117,6 @@ rclone provider 细节沿用旧版已验证结论：`rclone rcd` + 随机 RC 口
 |---|---|
 | 底座抽象过度，反向拖慢 drive | 只有 drive 真实需要的才进底座；Koma 需求等 P6 用真实切片验证 |
 | Tauri 版本与 Koma 不一致 | 对齐 Tauri 2（Koma 当前 2.x），`foundation-tauri` 延后到有第二个消费者 |
-| WinFsp 许可 | ADR-0004 定路线后再打包分发 |
-| rclone 体积/分发 | 单 exe 内置 or 首启下载，P4 决策，先留 `engine_dir` 注入点 |
+| WinFsp 许可 | 采用 MIT 开源 + WinFsp FLOSS 例外；WinFsp 由用户另行安装，见 ADR-0004 |
+| rclone 体积/分发 | Windows 免安装包包含独立 `rclone.exe` 并附 MIT 许可；也支持外部 `RCLONE_EXE` |
 | 迁移丢行为 | `requirements.md` 的 AC 清单逐条对照；旧仓库不删 |

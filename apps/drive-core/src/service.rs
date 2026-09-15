@@ -73,11 +73,16 @@ impl AppService {
     }
 
     pub fn unmount(&self, id_or_point: &str) -> Result<()> {
-        let mount_point = self
-            .store
-            .get(id_or_point)
-            .map(|c| c.drive)
-            .unwrap_or_else(|| id_or_point.to_string());
+        let mount_point = if let Some(connection) = self.store.get(id_or_point) {
+            self.provider
+                .list()?
+                .into_iter()
+                .find(|mount| mount_matches(&connection, mount))
+                .map(|mount| mount.mount_point)
+                .unwrap_or(connection.drive)
+        } else {
+            id_or_point.to_string()
+        };
         self.provider.unmount(&mount_point)
     }
 
@@ -89,11 +94,11 @@ impl AppService {
             .ok_or_else(|| FoundationError::NotFound(format!("连接 {id} 不存在")))?;
 
         if let Ok(mounts) = self.provider.list() {
-            let mounted = mounts
+            if let Some(mount) = mounts
                 .iter()
-                .any(|m| m.mount_point.to_lowercase() == connection.drive.to_lowercase());
-            if mounted {
-                self.provider.unmount(&connection.drive)?;
+                .find(|mount| mount_matches(&connection, mount))
+            {
+                self.provider.unmount(&mount.mount_point)?;
             }
         } else {
             log::warn!("引擎不可达，跳过卸载检查");
@@ -141,7 +146,57 @@ impl AppService {
         failures
     }
 
+    /// 正常退出前卸载全部虚拟硬盘，并等待 rclone 确认挂载列表已经清空。
+    ///
+    /// 与 `shutdown` 的兜底清理不同，本方法失败时保留引擎进程，让宿主可以取消退出、
+    /// 恢复窗口并允许用户重试或选择强制退出。
+    pub fn unmount_all_and_confirm(&self) -> Result<()> {
+        if !self.provider.engine_status().running {
+            return Ok(());
+        }
+
+        let mounts = self.provider.list()?;
+        let mut failures = Vec::new();
+        for mount in mounts {
+            if let Err(err) = self.provider.unmount(&mount.mount_point) {
+                log::error!("退出前卸载 {} 失败：{err}", mount.mount_point);
+                failures.push(format!("{}：{err}", mount.mount_point));
+            }
+        }
+        if !failures.is_empty() {
+            return Err(FoundationError::Process(format!(
+                "以下挂载无法卸载：{}",
+                failures.join("；")
+            )));
+        }
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let remaining = self.provider.list()?;
+            if remaining.is_empty() {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                let points = remaining
+                    .iter()
+                    .map(|mount| mount.mount_point.as_str())
+                    .collect::<Vec<_>>()
+                    .join("、");
+                return Err(FoundationError::Process(format!(
+                    "等待虚拟硬盘从系统中移除超时：{points}"
+                )));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+
     pub fn shutdown(&self) -> Result<()> {
         self.provider.shutdown()
     }
+}
+
+fn mount_matches(connection: &crate::model::Connection, mount: &MountRecord) -> bool {
+    let remote = format!("{}:", connection.remote);
+    mount.fs.eq_ignore_ascii_case(&remote)
+        || (connection.drive != "*" && mount.mount_point.eq_ignore_ascii_case(&connection.drive))
 }

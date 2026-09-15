@@ -21,6 +21,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
+# tray-icon 必须显式启用：托盘图标在 setup_tray() 里用代码创建，不依赖 tauri.conf.json 的
+# app.trayIcon（那个配置会让 Tauri 自动再建一个托盘图标，出现「两个图标」的 bug）。
 tauri = { version = "2.11.5", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2.4.4"
 

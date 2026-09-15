@@ -96,6 +96,11 @@ impl RcloneRc {
         self.call("core/version", json!({}))
     }
 
+    /// 请求引擎自行退出；调用方仍应等待并在超时后强制回收进程。
+    pub fn quit(&self) -> Result<Value> {
+        self.call("core/quit", json!({}))
+    }
+
     pub fn config_get(&self, name: &str) -> Result<Value> {
         self.call("config/get", json!({ "name": name }))
     }
