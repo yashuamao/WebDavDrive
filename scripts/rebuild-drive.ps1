@@ -20,6 +20,9 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
+    & (Join-Path $PSScriptRoot 'build-drive-ui.ps1')
+    if ($LASTEXITCODE -ne 0) { throw "UI build failed with exit code $LASTEXITCODE" }
+
     Write-Host '==> 1/3 Stop old instances (release file locks)' -ForegroundColor Cyan
     Get-Process drive -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Get-Process drive-pwcmd -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -34,7 +37,7 @@ try {
     }
 
     Write-Host '==> 3/3 Release build + package' -ForegroundColor Cyan
-    cargo build --offline --release -p drive -p drive-core
+    cargo build --offline --release -p drive -p drive-core --features drive/custom-protocol
     if ($LASTEXITCODE -ne 0) { throw "build failed with exit code $LASTEXITCODE" }
 
     & (Join-Path $PSScriptRoot 'package-windows.ps1') -RclonePath $RclonePath -Zip

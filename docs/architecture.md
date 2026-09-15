@@ -49,13 +49,15 @@ apps/drive-core (可选，后续需要 headless 时再拆)
 
 ```text
 apps/drive/
-├── package.json / vite.config.ts / tsconfig.json
-├── index.html
-├── src/                          # Vue 3 前端：连接列表、表单、状态、日志
-│   ├── main.ts / App.vue
-│   ├── api/                      # invoke 包装 + 视图类型
-│   ├── stores/                   # Pinia：connections / engine / ui
-│   └── views/                    # Connections / ConnectionForm / Logs / Settings
+├── ui/                           # React + TypeScript + Vite 前端
+│   ├── package.json / vite.config.ts / tsconfig.json
+│   ├── index.html
+│   └── src/
+│       ├── components/           # ui / drive / settings / shell / feedback
+│       ├── hooks/                # 状态编排、主题与 Tauri 事件
+│       ├── lib/                  # invoke 包装与纯工具函数
+│       ├── pages/                # Drives / Autostart / Logs / Settings
+│       └── types/                # IPC 视图类型
 └── src-tauri/
     ├── Cargo.toml                # 依赖 tauri 2 + 底座 crates
     ├── tauri.conf.json           # 托盘、窗口、单实例、打包
@@ -106,7 +108,7 @@ rclone provider 细节沿用旧版已验证结论：`rclone rcd` + 随机 RC 口
 | P0 规格回捞 ✅ | `docs/requirements.md`、ADR、旧文档归档 | 已完成 |
 | P1 底座 ✅ | core/config/secrets/windows/supervisor 实现 + 单元测试 | 已完成，测试全绿 |
 | P2 挂载 MVP ✅ | `apps/drive-core`（模型/参数/存储/rclone provider/服务）+ Tauri 宿主 | 引擎、配置、安全路径及 WinFsp 真机挂载已验收 |
-| P3 托盘 UI ✅ | 托盘/单实例/日志面板/自启注册/无构建 UI 完成；Vue 迁移按需（ADR-0005） | 自动化与 AC-28/38 真机检查通过 |
+| P3 托盘 UI ✅ | 托盘/单实例/日志面板/自启注册完成；UI 已迁移 React/TypeScript/Vite（ADR-0005） | 自动化与 AC-28/38 真机检查通过 |
 | P4 交付（部分） | 自启注册/退出清理/打包脚本/release 构建完成；真机挂载验收通过 | AC-28/38 真机通过；FLOSS 许可路线已定，签名、安装器待定 |
 | P5 可选 | Windows 原生 WebClient provider；`foundation-server` 管理页 | 按需 |
 | P6 Koma 试点 | 用 `foundation-windows`/`foundation-supervisor` 落 Koma Phase 5 一个小切片 | 不阻塞 Koma 主线 |

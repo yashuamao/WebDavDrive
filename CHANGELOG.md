@@ -1,5 +1,21 @@
 # 变更日志
 
+## 0.1.4 — 2026-09-15
+
+- 修复 0.1.3 正式包启动后仍访问 Vite 开发服务器，导致页面显示 `localhost` 拒绝连接的问题；
+- Windows 打包与重建脚本现在显式启用 Tauri `custom-protocol`，正式包会直接加载内嵌的 React UI；
+- 增加正式打包配置回归约束，避免后续再次遗漏 production protocol。
+
+## 0.1.3 — 2026-09-15
+
+- 桌面界面迁移到 React、TypeScript、Vite、Tailwind CSS、shadcn/ui 与 Base UI；
+- 驱动器页改为紧凑列表，挂载/卸载作为行内主要操作，其余操作收进更多菜单；
+- 统一挂载、忙碌和错误状态语言，连接错误改为行内反馈；
+- 增加系统/浅色/深色外观、键盘焦点、Dialog 焦点管理和减少动态效果支持；
+- 保留全部 Tauri command、自动挂载、日志、托盘退出清理与 5 秒状态刷新行为。
+
+验证状态：前端 production build 通过；Rust workspace 76 项测试通过；Tauri debug build 通过。
+
 ## 0.1.2 — 2026-09-15
 
 - 修复发布版启动时报 `Command plugin:event|listen not allowed by ACL`，导致界面初始化失败的问题；

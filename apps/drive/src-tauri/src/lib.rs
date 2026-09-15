@@ -290,22 +290,41 @@ mod tests {
         );
     }
 
-    /// 可选事件订阅即使失败，也不能阻止日志、新建连接等基础按钮完成绑定。
+    /// 可选事件订阅即使失败，也不能阻止 React 界面完成挂载。
     #[test]
-    fn ui_handlers_bind_before_optional_event_subscription() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ui/app.js");
+    fn optional_ui_event_subscription_handles_rejection() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../ui/src/hooks/useDriveManager.ts");
         let source = fs::read_to_string(&path)
             .unwrap_or_else(|err| panic!("无法读取前端脚本 {}：{err}", path.display()));
-        let first_handler = source
-            .find(".addEventListener(")
-            .expect("前端必须绑定 UI 事件处理器");
         let event_subscription = source
-            .find(".event.listen(")
+            .find("listen<string>(\"exit-cleanup-failed\"")
             .expect("前端必须订阅退出清理失败事件");
+        let rejection_handler = source[event_subscription..]
+            .find(".catch(")
+            .expect("可选事件订阅必须处理权限或运行时拒绝");
 
+        assert!(rejection_handler > 0, "可选事件订阅失败不得拖垮整个界面");
+    }
+
+    /// 打包脚本直接调用 Cargo，必须显式启用 Tauri 的 production protocol。
+    /// 否则只要 tauri.conf.json 声明了 devUrl，发布版就会继续访问开发服务器。
+    #[test]
+    fn windows_package_enables_tauri_custom_protocol() {
+        let manifest_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let manifest = fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|err| panic!("无法读取 {}：{err}", manifest_path.display()));
         assert!(
-            first_handler < event_subscription,
-            "应先绑定 UI 按钮，再执行可能被 ACL 拒绝的 event.listen"
+            manifest.contains("custom-protocol = [\"tauri/custom-protocol\"]"),
+            "drive crate 必须把 custom-protocol 转发给 tauri"
+        );
+
+        let package_script_path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../scripts/package-windows.ps1");
+        let package_script = fs::read_to_string(&package_script_path)
+            .unwrap_or_else(|err| panic!("无法读取 {}：{err}", package_script_path.display()));
+        assert!(
+            package_script.contains("--features drive/custom-protocol"),
+            "Windows 正式打包必须启用 drive/custom-protocol"
         );
     }
 }

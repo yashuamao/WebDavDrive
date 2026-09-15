@@ -10,6 +10,11 @@ license.workspace = true
 name = "drive_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# Tauri CLI 在正式构建时会启用该 feature。项目的离线打包脚本直接调用
+# cargo，因此也必须显式启用它，才能嵌入 frontendDist 而不是访问 devUrl。
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
 

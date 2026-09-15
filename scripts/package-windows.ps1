@@ -25,8 +25,11 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $release = Join-Path $root 'target\release'
 
-Write-Host '==> cargo build --release' -ForegroundColor Cyan
-cargo build --offline --release -p drive -p drive-core --manifest-path (Join-Path $root 'Cargo.toml')
+& (Join-Path $PSScriptRoot 'build-drive-ui.ps1')
+if ($LASTEXITCODE -ne 0) { throw "UI build 失败（$LASTEXITCODE）" }
+
+Write-Host '==> cargo build --release (Tauri custom protocol)' -ForegroundColor Cyan
+cargo build --offline --release -p drive -p drive-core --features drive/custom-protocol --manifest-path (Join-Path $root 'Cargo.toml')
 if ($LASTEXITCODE -ne 0) { throw "cargo build 失败（$LASTEXITCODE）" }
 
 $versionLine = Select-String -Path (Join-Path $root 'Cargo.toml') -Pattern '^version = "(.+)"' |

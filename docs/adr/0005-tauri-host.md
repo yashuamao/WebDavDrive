@@ -11,10 +11,13 @@
 3. 单实例使用 `tauri-plugin-single-instance`，第二个实例聚焦已有窗口后退出；
 4. 引擎（rclone）由宿主按需启动，口令与密钥逻辑在 `drive-core`；`drive-pwcmd.exe`
    随程序放在同目录，供 `--password-command` 调用（打包阶段必须一起分发）；
-5. 前端首版为无构建 HTML/JS（`apps/drive/ui`），直接使用 Tauri 注入的 `window.__TAURI__`。
-   Vue 迁移不阻塞功能；等需要复用 Koma 组件（共享 UI 包）时再评估，避免为样式一致性提前引入构建链。
+5. 前端首版曾使用无构建 HTML/JS；现已在 `apps/drive/ui` 渐进迁移为 React、TypeScript、
+   Vite、Tailwind CSS 与 Base UI 驱动的 shadcn/ui 本地组件。IPC 仍只调用本 ADR 定义的
+   Tauri commands，不把业务逻辑移入前端，也不改变 `drive-core` 边界。
 6. 自启任务动作固定为 `<自身 exe> --hidden`：计划任务拉起后隐藏到托盘，
    应用启动流程照常执行「挂载所有勾选自启的连接」。
+7. 正式构建必须启用 `drive/custom-protocol`。该项目的 Windows 脚本直接调用 Cargo，
+   若遗漏此 feature，Tauri 会按开发环境处理 `devUrl`，发布包将错误访问本机 Vite 服务。
 
 ## 后果
 

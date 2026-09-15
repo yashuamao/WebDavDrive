@@ -44,12 +44,16 @@
 
 ## 从源码构建
 
-要求：Windows、Rust 1.82+、WebView2 Runtime，以及已安装的 WinFsp。离线命令要求依赖已经存在于本机 Cargo 缓存。
+要求：Windows、Rust 1.82+、Node.js 20+、WebView2 Runtime，以及已安装的 WinFsp。离线命令要求依赖已经存在于本机 Cargo/npm 缓存。
 
 ```powershell
+cd apps\drive\ui
+npm ci
+npm run build
+cd ..\..\..
 cargo check --offline --workspace
 cargo test --offline --workspace -- --test-threads=1
-cargo build --offline --release -p drive -p drive-core
+cargo build --offline --release -p drive -p drive-core --features drive/custom-protocol
 ```
 
 运行源码构建的 `drive.exe` 时，需把 `rclone.exe` 放在程序同目录或 `bin\`，也可以设置 `RCLONE_EXE`。
@@ -76,7 +80,7 @@ crates/                      # 可复用底座，不依赖 WebDAV/rclone/Tauri �
 apps/
   drive-core/                # WebDAV Drive 业务核心与 rclone provider
   drive/src-tauri/           # Tauri 2 桌面宿主
-  drive/ui/                  # 无构建 HTML/CSS/JavaScript 界面
+  drive/ui/                  # React + TypeScript + Vite 桌面界面
 docs/                        # 需求、架构、ADR 与历史资料
 ```
 
