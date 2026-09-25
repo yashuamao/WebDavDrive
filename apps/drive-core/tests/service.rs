@@ -19,6 +19,8 @@ struct FakeProvider {
     delete_error: Mutex<Option<String>>,
     mount_error: Mutex<Option<String>>,
     list_fails: AtomicBool,
+    /// 每次 mount() 时该连接的 dir_cache_time（断言「重挂用的是新设置」）。
+    mount_dir_cache_times: Mutex<Vec<String>>,
 }
 
 impl FakeProvider {
@@ -28,6 +30,10 @@ impl FakeProvider {
 
     fn remote_calls(&self) -> Vec<String> {
         self.remotes.lock().unwrap().clone()
+    }
+
+    fn mount_dir_cache_times(&self) -> Vec<String> {
+        self.mount_dir_cache_times.lock().unwrap().clone()
     }
 }
 
@@ -66,6 +72,10 @@ impl MountProvider for FakeProvider {
         if let Some(message) = self.mount_error.lock().unwrap().clone() {
             return Err(FoundationError::Process(message));
         }
+        self.mount_dir_cache_times
+            .lock()
+            .unwrap()
+            .push(connection.dir_cache_time.clone());
         let record = MountRecord {
             fs: format!("{}:", connection.remote),
             mount_point: if connection.drive == "*" {
@@ -275,4 +285,80 @@ fn mount_all_autostart_reports_failures_without_aborting() {
     let failures = app.mount_all_autostart();
     assert_eq!(failures.len(), 1);
     assert!(failures[0].1.contains("no winfsp"));
+}
+
+#[test]
+fn saving_changed_cache_settings_while_mounted_remounts_with_new_params() {
+    let dir = temp_dir("reapply");
+    let provider = Arc::new(FakeProvider::default());
+    let app = service(&dir, provider.clone());
+
+    let saved = app.upsert(input("NAS", "http://nas/dav")).unwrap();
+    app.mount(&saved.id).unwrap();
+    assert_eq!(provider.mount_dir_cache_times(), vec!["5m".to_string()]);
+
+    // 用户把目录缓存时间改成 1h 再保存：已经在用的盘必须按新参数重挂一次，
+    // 否则 rclone 侧还是老参数，用户看到的就是「设置无效」。
+    app.upsert(ConnectionInput {
+        id: Some(saved.id.clone()),
+        dir_cache_time: Some("1h".into()),
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert_eq!(
+        provider.mount_dir_cache_times(),
+        vec!["5m".to_string(), "1h".to_string()],
+        "改设置后应带新参数重新挂载一次"
+    );
+    let mounts = provider.mounted();
+    assert_eq!(mounts.len(), 1, "重挂后仍然只应有一个挂载");
+    assert_eq!(mounts[0].mount_point, "X:");
+    assert_eq!(
+        app.list()
+            .iter()
+            .find(|c| c.id == saved.id)
+            .unwrap()
+            .dir_cache_time,
+        "1h"
+    );
+}
+
+#[test]
+fn saving_unrelated_change_while_mounted_keeps_existing_mount() {
+    let dir = temp_dir("keep-mount");
+    let provider = Arc::new(FakeProvider::default());
+    let app = service(&dir, provider.clone());
+
+    let saved = app.upsert(input("NAS", "http://nas/dav")).unwrap();
+    app.mount(&saved.id).unwrap();
+
+    // 只改自启开关：与挂载参数无关，不该打扰正在使用中的盘
+    app.upsert(ConnectionInput {
+        id: Some(saved.id.clone()),
+        autostart: Some(true),
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert_eq!(provider.mount_dir_cache_times(), vec!["5m".to_string()]);
+    assert_eq!(provider.mounted().len(), 1);
+}
+
+#[test]
+fn saving_changed_settings_without_mount_does_not_create_mount() {
+    let dir = temp_dir("not-mounted");
+    let provider = Arc::new(FakeProvider::default());
+    let app = service(&dir, provider.clone());
+
+    let saved = app.upsert(input("NAS", "http://nas/dav")).unwrap();
+    app.upsert(ConnectionInput {
+        id: Some(saved.id.clone()),
+        dir_cache_time: Some("1h".into()),
+        ..Default::default()
+    })
+    .unwrap();
+
+    assert!(provider.mounted().is_empty(), "没挂载就不该凭空挂载");
+    assert!(provider.mount_dir_cache_times().is_empty());
 }

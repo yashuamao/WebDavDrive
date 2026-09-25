@@ -8,7 +8,8 @@ use std::sync::Arc;
 use foundation_core::{FoundationError, Result};
 use serde::Serialize;
 
-use crate::model::{ConnectionInput, ConnectionView};
+use crate::model::{Connection, ConnectionInput, ConnectionView};
+use crate::params::build_mount_params;
 use crate::provider::{EngineStatus, MountProvider, MountRecord, ProbeReport};
 use crate::store::ProfileStore;
 
@@ -47,11 +48,67 @@ impl AppService {
     }
 
     /// 保存连接并同步 remote；remote 同步失败时连接已保存，向上报错由 UI 提示重试。
+    ///
+    /// 若这条连接正处于挂载状态、且本次改动会影响挂载行为（盘符、卷标、VFS 缓存模式、
+    /// 目录缓存时间、只读、附加参数、地址/账号…），保存后会自动卸载并按新设置重新挂载。
+    ///
+    /// 为什么必须在这里做：rclone 的 RC API 只能创建/销毁挂载，没有「修改活动挂载的
+    /// vfs 选项」的接口（`options/set` 只改全局默认值），所以不重新挂载的话，用户改完
+    /// 目录缓存时间再保存，已经在用的盘上不会有任何变化——看起来就像这个设置无效。
     pub fn upsert(&self, input: ConnectionInput) -> Result<ConnectionView> {
+        let existing = input.id.as_deref().and_then(|id| self.store.get(id));
         let connection = self.store.upsert(input)?;
         let password = self.store.reveal_password(&connection)?;
         self.provider.ensure_remote(&connection, &password)?;
+        if let Some(existing) = existing {
+            self.reapply_if_mounted(&existing, &connection, &password)?;
+        }
         Ok(connection.view())
+    }
+
+    /// 设置变了且这条连接正在挂载中 → 卸载再挂载，让新设置立刻生效。
+    ///
+    /// 失败时连接已经保存（与上面 remote 同步失败的约定一致），错误消息会说明当前
+    /// 处于「旧挂载还在」还是「已卸载但没挂上」，用户据此决定手动重挂还是直接重试。
+    fn reapply_if_mounted(
+        &self,
+        previous: &Connection,
+        connection: &Connection,
+        password: &str,
+    ) -> Result<()> {
+        if !mount_settings_changed(previous, connection) {
+            return Ok(());
+        }
+        let mounted = self
+            .provider
+            .list()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|mount| mount_matches(previous, mount) || mount_matches(connection, mount));
+        let Some(mount) = mounted else {
+            return Ok(());
+        };
+        // 先把新参数算一遍：挂载点写错这类错误必须在卸载之前暴露，
+        // 否则会把一个本来能用的盘卸掉却挂不回来。
+        build_mount_params(connection)?;
+        if let Err(err) = self.provider.unmount(&mount.mount_point) {
+            return Err(FoundationError::Process(format!(
+                "设置已保存，但无法卸载现有挂载 {}：{err}。新设置尚未生效，请手动卸载后重新挂载。",
+                mount.mount_point
+            )));
+        }
+        if let Err(err) = self.provider.mount(connection, password) {
+            return Err(FoundationError::Process(format!(
+                "设置已保存，旧挂载 {} 已卸载，但用新设置重新挂载失败：{err}。请修正后手动挂载。",
+                mount.mount_point
+            )));
+        }
+        log::info!(
+            "设置变更：已重新挂载 {}（{}）以应用新的缓存/挂载参数",
+            connection.name,
+            connection.drive
+        );
+        Ok(())
     }
 
     pub fn probe(&self, id: &str) -> Result<ProbeReport> {
@@ -192,6 +249,26 @@ impl AppService {
 
     pub fn shutdown(&self) -> Result<()> {
         self.provider.shutdown()
+    }
+}
+
+/// 这次保存是否改变了「挂载行为」（决定要不要重新挂载）。
+///
+/// 比较凭据/地址（会换掉 rclone remote 的内容）与最终挂载参数（盘符、卷标、VFS
+/// 缓存模式、目录缓存时间、只读、附加参数…都用 build_mount_params 比一遍）。
+fn mount_settings_changed(previous: &Connection, connection: &Connection) -> bool {
+    if previous.url != connection.url
+        || previous.user != connection.user
+        || previous.vendor != connection.vendor
+        || previous.password_enc != connection.password_enc
+    {
+        return true;
+    }
+    match (build_mount_params(previous), build_mount_params(connection)) {
+        (Ok(before), Ok(after)) => before != after,
+        // 新设置本身算不出参数（例如挂载点非法）：当成有变化，
+        // 交给重新挂载流程报错，而不是静默忽略。
+        _ => true,
     }
 }
 
