@@ -6,7 +6,6 @@
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D4.svg)](https://www.microsoft.com/windows)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-000000.svg)](https://www.rust-lang.org/)
 
-![WebDAV Drive 主界面](docs/ui/webdav-drive-raidrive-inspired-v1.png)
 
 ## 功能
 
