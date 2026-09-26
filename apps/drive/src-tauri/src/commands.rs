@@ -3,6 +3,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use std::path::Path;
+
+use drive_core::engine_update::EngineUpdateInfo;
 use drive_core::model::ConnectionInput;
 use drive_core::provider::MountRecord;
 use drive_core::{AppService, AppStatus, AutostartStatus, ConnectionView, ProbeReport};
@@ -101,6 +104,72 @@ pub fn ensure_engine(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn shutdown_engine(state: State<'_, AppState>) -> Result<(), String> {
     state.service.shutdown().map_err(message)
+}
+
+
+// -- 引擎（rclone）独立更新 ------------------------------------------------------
+
+/// 引擎更新状态（当前版本、可用版本、上次检查结果、更新源）。只读，不触网。
+#[tauri::command]
+pub fn engine_status(state: State<'_, AppState>) -> EngineUpdateInfo {
+    state.service.engine_update_info()
+}
+
+/// 检查更新：force = 设置页手动按钮（随时可点，绕过每天一次的限制）。
+///
+/// 网络失败不返回 Err：写进 last_error 由设置页显示「上次检查失败/可重试」。
+#[tauri::command]
+pub fn check_engine_update(state: State<'_, AppState>, force: bool) -> EngineUpdateInfo {
+    state.service.check_engine_update(force)
+}
+
+/// 保存镜像前缀（空串 = 官方源）。
+#[tauri::command]
+pub fn set_engine_mirror_prefix(
+    state: State<'_, AppState>,
+    prefix: String,
+) -> Result<EngineUpdateInfo, String> {
+    state
+        .service
+        .set_engine_mirror_prefix(&prefix)
+        .map_err(message)
+}
+
+/// 安装指定版本的官方引擎包（用户确认后调用；安装必然中断挂载，服务层会拒绝）。
+#[tauri::command]
+pub fn install_engine_update(
+    state: State<'_, AppState>,
+    version: String,
+) -> Result<EngineUpdateInfo, String> {
+    if state.exit_in_progress.load(Ordering::Acquire) {
+        return Err("应用正在退出，暂不能更新引擎".into());
+    }
+    state
+        .service
+        .install_engine_update(&version)
+        .map_err(message)
+}
+
+/// 用本地文件（rclone.exe 或官方 zip）安装引擎。
+#[tauri::command]
+pub fn install_engine_from_file(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<EngineUpdateInfo, String> {
+    if state.exit_in_progress.load(Ordering::Acquire) {
+        return Err("应用正在退出，暂不能更新引擎".into());
+    }
+    state
+        .service
+        .install_engine_from_file(Path::new(&path))
+        .map_err(message)
+}
+
+/// 弹系统文件选择框挑引擎文件；用户取消返回 null。
+#[tauri::command]
+pub fn pick_engine_file(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+    let owner = window.hwnd().map(|hwnd| hwnd.0 as isize).unwrap_or(0);
+    crate::file_dialog::pick_engine_file(owner)
 }
 
 #[tauri::command]

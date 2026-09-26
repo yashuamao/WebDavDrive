@@ -838,12 +838,14 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-single-instance",
  "thiserror 2.0.20",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "drive-core"
 version = "0.1.6"
 dependencies = [
+ "flate2",
  "foundation-config",
  "foundation-core",
  "foundation-secrets",
@@ -852,8 +854,10 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.20",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

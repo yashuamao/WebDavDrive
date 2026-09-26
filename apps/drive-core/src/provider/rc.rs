@@ -101,6 +101,11 @@ impl RcloneRc {
         self.call("core/quit", json!({}))
     }
 
+    /// 引擎的全局选项：引擎更新后用 vfs.DirCacheTime 的存在与否判断参数兼容性。
+    pub fn options_get(&self) -> Result<Value> {
+        self.call("options/get", json!({}))
+    }
+
     pub fn config_get(&self, name: &str) -> Result<Value> {
         self.call("config/get", json!({ "name": name }))
     }

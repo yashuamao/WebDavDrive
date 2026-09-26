@@ -1,5 +1,24 @@
 # 变更日志
 
+## 0.1.7 — 2026-09-26
+
+- 新增 rclone 引擎独立更新（设置页「引擎」面板）：可在不发新版的前提下单独升级 rclone.exe；
+- 更新源走 rclone 官方 GitHub release（api.github.com/repos/rclone/rclone/releases/latest），
+  下载 rclone-v<ver>-windows-amd64.zip 并用同一 release 的 SHA256SUMS 校验，网络层用系统 WinHTTP
+  （不引入 TLS 依赖，保持 --offline 构建）；支持填写镜像前缀与「从本地文件安装引擎」；
+- 检查策略：手动按钮随时可用（绕过限流），自动检查每天最多一次，状态与 ETag 持久化到
+  %PROGRAMDATA%\WebDavDrive\engine-update.json；
+- 安装采用无挂载门禁：卸载全部挂载并确认列表清空 → 停引擎 → 替换 rclone.exe（旧文件留 .old）
+  → 重启后校验 core/version 版本号与 options/get 里的 vfs.DirCacheTime → 失败自动回滚；
+- 相关单测（择版 / SHA256SUMS 解析 / 每日限流 / 版本比较 / 替换与回滚）；
+- 真实联网验证：官方 latest=v1.75.1、zip 31,488,864 B 与 SHA256SUMS 比对一致、解包 rclone.exe
+  85,192,704 B 且版本输出 rclone v1.75.1。
+
+验证状态：
+
+- cargo test --offline --workspace -- --test-threads=1：25 个测试块 0 失败（drive-core 单测 10 → 29）；
+- 前端 production build 通过。
+
 ## 0.1.6 — 2026-09-26
 
 - 分发形态改为 **NSIS 安装包**（`bundle.targets = ["nsis"]`、`installMode: currentUser`）：安装向导自带

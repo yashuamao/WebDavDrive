@@ -5,11 +5,15 @@
 //! Tauri 宿主只负责把这些能力暴露成命令与界面。
 
 pub mod autostart;
+pub mod http;
 pub mod model;
 pub mod params;
 pub mod provider;
 pub mod service;
 pub mod store;
+pub mod zip_extract;
+
+pub mod engine_update;
 
 pub use autostart::AutostartStatus;
 pub use model::{Connection, ConnectionInput, ConnectionView};

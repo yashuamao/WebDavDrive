@@ -9,6 +9,8 @@ mod rclone;
 pub use rc::RcloneRc;
 pub use rclone::{EngineConfig, RcloneProvider};
 
+use std::path::PathBuf;
+
 use foundation_core::Result;
 use serde::Serialize;
 
@@ -40,6 +42,18 @@ pub trait MountProvider: Send + Sync {
 
     /// 引擎安装/运行状态（不触发启动）。
     fn engine_status(&self) -> EngineStatus;
+
+    /// 引擎可执行文件的安装路径：引擎更新替换的目标文件。
+    ///
+    /// 现有引擎找不到时返回"应该装到哪里"的建议位置，而不是报错——用户在设置页
+    /// 选择本地文件安装引擎时，本来就可能是全新环境。
+    fn engine_install_path(&self) -> PathBuf;
+
+    /// 引擎二进制自报的版本号（不启动引擎也能问；运行时优先走 RC）。
+    fn installed_version(&self) -> Result<Option<String>>;
+
+    /// RC 的 options/get：升级引擎后校验 vfs.DirCacheTime 是否仍然存在。
+    fn options_get(&self) -> Result<serde_json::Value>;
 
     /// 幂等启动引擎；失败返回明确错误。
     fn ensure_started(&self) -> Result<()>;

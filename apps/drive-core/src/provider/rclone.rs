@@ -361,6 +361,18 @@ impl RcloneProvider {
     }
 }
 
+/// 从 rclone version 的输出里取版本号（第一行形如 `rclone v1.75.1`）。
+pub fn parse_engine_version(output: &str) -> Option<String> {
+    let first = output.lines().next()?.trim();
+    let token = first.split_whitespace().nth(1)?;
+    let version = token.trim_start_matches('v');
+    if version.is_empty() {
+        None
+    } else {
+        Some(version.to_string())
+    }
+}
+
 impl MountProvider for RcloneProvider {
     fn id(&self) -> &'static str {
         "rclone"
@@ -405,6 +417,50 @@ impl MountProvider for RcloneProvider {
             log::warn!("检测到 rclone 进程已退出；下次操作将自动重启引擎");
         }
         status
+    }
+
+    /// 替换目标：优先用正在使用的那个 rclone.exe；没有现成的就装到 exe 同目录
+    /// （与打包布局一致：dist\WebDavDrive-<版本>\drive.exe + rclone.exe）。
+    fn engine_install_path(&self) -> PathBuf {
+        if let Some(path) = self.find_engine() {
+            return path;
+        }
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join("rclone.exe")))
+            .unwrap_or_else(|| PathBuf::from("rclone.exe"))
+    }
+
+    /// 引擎版本：进程在跑就问 RC（零额外进程），否则直接执行 rclone version。
+    fn installed_version(&self) -> Result<Option<String>> {
+        {
+            let mut guard = self.engine.lock().unwrap_or_else(|p| p.into_inner());
+            if let Some(engine) = guard.as_mut() {
+                if engine.child.is_running() {
+                    if let Ok(payload) = engine.rc.version() {
+                        let version = payload
+                            .get("version")
+                            .and_then(Value::as_str)
+                            .map(str::to_string);
+                        return Ok(version);
+                    }
+                }
+            }
+        }
+        let Some(path) = self.find_engine() else {
+            return Ok(None);
+        };
+        let mut command = Command::new(&path);
+        command.arg("version").stdin(Stdio::null());
+        foundation_core::process::hide_console(&mut command);
+        let output = command.output().map_err(|err| {
+            FoundationError::Process(format!("无法执行 {} version：{err}", path.display()))
+        })?;
+        Ok(parse_engine_version(&String::from_utf8_lossy(&output.stdout)))
+    }
+
+    fn options_get(&self) -> Result<Value> {
+        self.with_rc(|rc| rc.options_get())
     }
 
     fn ensure_started(&self) -> Result<()> {
@@ -540,5 +596,20 @@ impl MountProvider for RcloneProvider {
             }
         }
         Ok(())
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_engine_version_from_cli_output() {
+        // rclone version 的真实输出（第一行是版本，后面是 os/version 等）。
+        let output = "rclone v1.75.1\n- os/version: Microsoft Windows 11 Pro (64 bit)\n";
+        assert_eq!(parse_engine_version(output).as_deref(), Some("1.75.1"));
+        assert_eq!(parse_engine_version("rclone v1.60.0").as_deref(), Some("1.60.0"));
+        assert_eq!(parse_engine_version(""), None);
+        assert_eq!(parse_engine_version("rclone"), None);
+        assert_eq!(parse_engine_version("rclone v"), None);
     }
 }

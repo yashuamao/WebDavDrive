@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use drive_core::engine_update::{EngineUpdater, HttpText, UpdateTransport};
 use drive_core::model::{Connection, ConnectionInput};
 use drive_core::provider::{EngineStatus, MountProvider, MountRecord, ProbeReport};
 use drive_core::{AppService, ProfileStore};
@@ -21,6 +22,16 @@ struct FakeProvider {
     list_fails: AtomicBool,
     /// 每次 mount() 时该连接的 dir_cache_time（断言「重挂用的是新设置」）。
     mount_dir_cache_times: Mutex<Vec<String>>,
+    /// 引擎调用顺序（shutdown / ensure_started），引擎更新编排要靠它验证顺序。
+    calls: Mutex<Vec<String>>,
+    /// 引擎可执行文件的安装路径；文件内容就是「版本号」，用于模拟换文件后的版本变化。
+    engine_path: Mutex<Option<PathBuf>>,
+    /// 模拟引擎已停止（shutdown 置位，ensure_started 清位）。
+    stopped: AtomicBool,
+    /// ensure_started 是否直接失败。
+    fail_start: AtomicBool,
+    /// options/get 里是否去掉 vfs.DirCacheTime（模拟新版本不再提供该选项）。
+    drop_vfs_option: AtomicBool,
 }
 
 impl FakeProvider {
@@ -35,6 +46,28 @@ impl FakeProvider {
     fn mount_dir_cache_times(&self) -> Vec<String> {
         self.mount_dir_cache_times.lock().unwrap().clone()
     }
+
+    fn calls(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    fn set_engine(&self, path: PathBuf) {
+        *self.engine_path.lock().unwrap() = Some(path);
+    }
+
+    fn engine_file(&self) -> PathBuf {
+        self.engine_path
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("测试必须先 set_engine")
+    }
+}
+
+/// 假引擎的「版本号」= 安装路径里文件的内容（MZ 之后的第一个 token）。
+fn fake_engine_version(path: &PathBuf) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    content.split_whitespace().nth(1).map(str::to_string)
 }
 
 impl MountProvider for FakeProvider {
@@ -43,16 +76,44 @@ impl MountProvider for FakeProvider {
     }
 
     fn engine_status(&self) -> EngineStatus {
+        let path = self.engine_file();
         EngineStatus {
-            installed: true,
-            path: Some("fake-rclone.exe".into()),
-            version: Some("v-test".into()),
-            running: true,
+            installed: path.is_file(),
+            path: Some(path.to_string_lossy().to_string()),
+            version: fake_engine_version(&path),
+            running: !self.stopped.load(Ordering::SeqCst),
             rc_addr: Some("127.0.0.1:0".into()),
         }
     }
 
+    fn engine_install_path(&self) -> PathBuf {
+        self.engine_file()
+    }
+
+    fn installed_version(&self) -> Result<Option<String>> {
+        Ok(fake_engine_version(&self.engine_file()))
+    }
+
+    fn options_get(&self) -> Result<serde_json::Value> {
+        if self.drop_vfs_option.load(Ordering::SeqCst) {
+            Ok(json!({ "vfs": {} }))
+        } else {
+            Ok(json!({ "vfs": { "DirCacheTime": "5m0s" } }))
+        }
+    }
+
     fn ensure_started(&self) -> Result<()> {
+        self.calls.lock().unwrap().push("ensure_started".into());
+        if self.fail_start.load(Ordering::SeqCst) {
+            return Err(FoundationError::Process("引擎启动失败（测试注入）".into()));
+        }
+        // 文件里带 BROKEN-START 就等于「换上去的引擎起不来」。
+        if let Ok(content) = std::fs::read_to_string(self.engine_file()) {
+            if content.contains("BROKEN-START") {
+                return Err(FoundationError::Process("引擎无法启动（坏文件）".into()));
+            }
+        }
+        self.stopped.store(false, Ordering::SeqCst);
         Ok(())
     }
 
@@ -111,6 +172,8 @@ impl MountProvider for FakeProvider {
     }
 
     fn shutdown(&self) -> Result<()> {
+        self.calls.lock().unwrap().push("shutdown".into());
+        self.stopped.store(true, Ordering::SeqCst);
         Ok(())
     }
 }
@@ -361,4 +424,181 @@ fn saving_changed_settings_without_mount_does_not_create_mount() {
 
     assert!(provider.mounted().is_empty(), "没挂载就不该凭空挂载");
     assert!(provider.mount_dir_cache_times().is_empty());
+}
+// ---------------------------------------------------------------------------
+// 引擎（rclone）独立更新的编排测试
+// ---------------------------------------------------------------------------
+
+/// 官方下载路径在 engine_update 的单元测试里用假响应覆盖；编排测试不碰网络。
+struct OfflineTransport;
+
+impl UpdateTransport for OfflineTransport {
+    fn get_text(&self, _url: &str, _etag: Option<&str>) -> Result<HttpText> {
+        Err(FoundationError::Process("测试不联网".into()))
+    }
+
+    fn download(&self, _url: &str, _dest: &std::path::Path) -> Result<()> {
+        Err(FoundationError::Process("测试不联网".into()))
+    }
+}
+
+/// 造一套「已安装 rclone」的环境：引擎文件内容就是它自报的版本号。
+fn update_setup(tag: &str) -> (PathBuf, PathBuf, Arc<FakeProvider>, AppService) {
+    let root = temp_dir(tag);
+    let engine = root.join("engine").join("rclone.exe");
+    std::fs::create_dir_all(engine.parent().unwrap()).unwrap();
+    std::fs::write(&engine, b"MZ v1.75.1").unwrap();
+
+    let data = root.join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    let provider = Arc::new(FakeProvider::default());
+    provider.set_engine(engine.clone());
+
+    let secrets: Arc<dyn SecretStore> = Arc::new(FileSecretStore::new(data.join("keystore.bin")));
+    let store = ProfileStore::open(&data, secrets).unwrap();
+    let updater = EngineUpdater::new(data.join("update"), Arc::new(OfflineTransport));
+    let app = AppService::with_updater(store, provider.clone(), updater);
+    (root, engine, provider, app)
+}
+
+fn backup_of(engine: &PathBuf) -> PathBuf {
+    PathBuf::from(format!("{}.old", engine.display()))
+}
+
+#[test]
+fn engine_install_is_refused_while_any_drive_is_mounted() {
+    let (_root, engine, provider, app) = update_setup("engine-gate");
+    let saved = app.upsert(input("NAS", "http://nas/dav")).unwrap();
+    app.mount(&saved.id).unwrap();
+
+    let candidate = engine.parent().unwrap().join("candidate.exe");
+    std::fs::write(&candidate, b"MZ v1.99.3").unwrap();
+
+    let err = app.install_engine_from_file(&candidate).unwrap_err();
+    assert_eq!(err.code(), "conflict");
+    assert!(err.to_string().contains("请先全部卸载"), "{err}");
+    assert!(
+        provider.calls().is_empty(),
+        "门禁不通过时绝不能停引擎：{:?}",
+        provider.calls()
+    );
+    assert_eq!(
+        std::fs::read_to_string(&engine).unwrap(),
+        "MZ v1.75.1",
+        "门禁不通过时引擎文件不得被动过"
+    );
+    assert_eq!(provider.mounted().len(), 1);
+}
+
+#[test]
+fn installing_from_file_swaps_engine_restarts_and_discards_backup() {
+    let (_root, engine, provider, app) = update_setup("engine-install");
+    let candidate = engine.parent().unwrap().join("candidate.exe");
+    std::fs::write(&candidate, b"MZ v1.99.3").unwrap();
+
+    let info = app.install_engine_from_file(&candidate).unwrap();
+
+    assert_eq!(info.installed_version.as_deref(), Some("1.99.3"));
+    assert!(!info.update_available, "已经是最新版本时不该再提示更新");
+    assert_eq!(std::fs::read_to_string(&engine).unwrap(), "MZ v1.99.3");
+    assert!(!backup_of(&engine).exists(), "成功后必须清掉备份");
+    assert_eq!(
+        provider.calls(),
+        vec!["shutdown".to_string(), "ensure_started".to_string()],
+        "顺序必须是先停引擎再换文件再启动"
+    );
+    assert!(
+        !provider.stopped.load(Ordering::SeqCst),
+        "安装完成后引擎应是运行状态"
+    );
+    // 状态持久化：本地版本号写进 engine-update.json。
+    assert_eq!(
+        app.updater().load_state().installed_version.as_deref(),
+        Some("1.99.3")
+    );
+}
+
+#[test]
+fn engine_that_cannot_start_is_rolled_back() {
+    let (_root, engine, provider, app) = update_setup("engine-rollback");
+    let candidate = engine.parent().unwrap().join("candidate.exe");
+    // BROKEN-START = 这个 exe 起不来（假引擎约定）。
+    std::fs::write(&candidate, b"MZ v1.99.3 BROKEN-START").unwrap();
+
+    let err = app.install_engine_from_file(&candidate).unwrap_err();
+    let text = err.to_string();
+    assert!(text.contains("第 4 步"), "{text}");
+    assert!(text.contains("已回滚到原引擎"), "{text}");
+
+    assert_eq!(
+        std::fs::read_to_string(&engine).unwrap(),
+        "MZ v1.75.1",
+        "回滚必须把旧引擎换回来"
+    );
+    assert!(!backup_of(&engine).exists(), "回滚成功后备份应被消化掉");
+    assert_eq!(
+        provider.calls(),
+        vec![
+            "shutdown".to_string(),
+            "ensure_started".to_string(),
+            "shutdown".to_string(),
+            "ensure_started".to_string(),
+        ],
+        "失败后必须停掉新引擎、还原旧文件、再启动旧引擎"
+    );
+    assert!(!provider.stopped.load(Ordering::SeqCst));
+}
+
+#[test]
+fn engine_losing_dir_cache_time_option_is_rolled_back() {
+    let (_root, engine, provider, app) = update_setup("engine-vfs");
+    provider.drop_vfs_option.store(true, Ordering::SeqCst);
+    let candidate = engine.parent().unwrap().join("candidate.exe");
+    std::fs::write(&candidate, b"MZ v1.99.3").unwrap();
+
+    let err = app.install_engine_from_file(&candidate).unwrap_err();
+    let text = err.to_string();
+    assert!(text.contains("vfs.DirCacheTime"), "{text}");
+    assert!(text.contains("已回滚到原引擎"), "{text}");
+    assert_eq!(std::fs::read_to_string(&engine).unwrap(), "MZ v1.75.1");
+}
+
+#[test]
+fn install_rejects_missing_and_non_executable_local_files_before_touching_engine() {
+    let (_root, engine, provider, app) = update_setup("engine-bad-file");
+
+    let missing = engine.parent().unwrap().join("nope.exe");
+    assert!(app
+        .install_engine_from_file(&missing)
+        .unwrap_err()
+        .to_string()
+        .contains("文件不存在"));
+
+    let text_file = engine.parent().unwrap().join("notes.txt");
+    std::fs::write(&text_file, b"not an exe").unwrap();
+    let err = app.install_engine_from_file(&text_file).unwrap_err();
+    assert!(err.to_string().contains("MZ"), "{err}");
+
+    assert!(provider.calls().is_empty(), "没通过校验就不能碰引擎");
+    assert_eq!(std::fs::read_to_string(&engine).unwrap(), "MZ v1.75.1");
+}
+
+#[test]
+fn engine_update_view_reports_state_without_network() {
+    let (_root, _engine, _provider, app) = update_setup("engine-view");
+    let info = app.engine_update_info();
+    assert_eq!(info.installed_version.as_deref(), Some("1.75.1"));
+    assert_eq!(info.latest_version, None);
+    assert!(!info.checked, "只读展示不得发起检查");
+    assert_eq!(info.source, "rclone 官方（api.github.com）");
+
+    // 手动检查（force）在离线环境里静默失败：只记 last_error，不返回 Err。
+    let checked = app.check_engine_update(true);
+    assert!(checked.checked);
+    assert!(checked.last_error.as_deref().unwrap().contains("测试不联网"));
+
+    // 存镜像前缀：立即体现在更新源描述上。
+    let mirrored = app.set_engine_mirror_prefix("https://ghfast.top/").unwrap();
+    assert_eq!(mirrored.mirror_prefix, "https://ghfast.top");
+    assert!(mirrored.source.contains("ghfast.top"));
 }

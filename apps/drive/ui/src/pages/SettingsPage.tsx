@@ -1,5 +1,6 @@
 import { Check } from "lucide-react";
 import { StatusIndicator } from "@/components/feedback/StatusIndicator";
+import { EngineUpdatePanel } from "@/components/settings/EngineUpdatePanel";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { SettingsRow } from "@/components/settings/SettingsRow";
 import { Select } from "@/components/ui/select";
@@ -53,6 +54,13 @@ export function SettingsPage({ status }: { status: AppStatus }) {
             把 rclone.exe 放到程序同目录或 bin 子目录，或设置 RCLONE_EXE 环境变量。
           </div>
         ) : null}
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="引擎（rclone）"
+        description="引擎独立更新：只提示、确认后才安装；安装前必须没有挂载，失败会自动回滚"
+      >
+        <EngineUpdatePanel engine={status.engine} />
       </SettingsGroup>
 
       <SettingsGroup title="退出行为">

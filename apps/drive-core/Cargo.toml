@@ -16,9 +16,15 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
+# 引擎更新：校验官方 SHA256SUMS 与解压官方 zip（两者都已在 Cargo.lock 里，不引入新依赖树）
+sha2 = "0.10"
+flate2 = "1"
 
 [target.'cfg(windows)'.dependencies]
 foundation-windows = { workspace = true }
+# 引擎更新要访问 https://api.github.com 与 https://github.com：用系统自带的 WinHTTP，
+# 避免为一次 HTTPS GET 引入 TLS 依赖（仓库构建固定 --offline）。
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Networking_WinHttp"] }
 
 [[bin]]
 name = "drive-pwcmd"

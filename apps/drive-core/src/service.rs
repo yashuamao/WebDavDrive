@@ -1,13 +1,22 @@
-//! 应用服务：把 store 与 provider 编排成用例（保存/挂载/卸载/删除/状态）。
+//! 应用服务：把 store 与 provider 编排成用例（保存/挂载/卸载/删除/状态/引擎更新）。
 //!
 //! 删除连接必须防孤儿（AC-10）：remote 删不掉就保留连接并报错，
 //! 不能让 rclone.conf 里留下带凭据、永远无人清理的 remote。
+//!
+//! 引擎更新（rclone 独立升级）的编排也在这里，因为它是唯一同时需要
+//! provider（停/起引擎）、engine_update（下载/校验/替换）与界面确认的用例：
+//! 无挂载门禁 → 停引擎 → swap_engine → 重启 → 校验 core/version 与
+//! options/get 的 vfs.DirCacheTime → 成功清备份，任何失败回滚。
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use foundation_core::{FoundationError, Result};
 use serde::Serialize;
 
+use crate::engine_update::{
+    self, cleanup_staging, default_transport, EngineUpdateInfo, EngineUpdater,
+};
 use crate::model::{Connection, ConnectionInput, ConnectionView};
 use crate::params::build_mount_params;
 use crate::provider::{EngineStatus, MountProvider, MountRecord, ProbeReport};
@@ -16,6 +25,7 @@ use crate::store::ProfileStore;
 pub struct AppService {
     store: ProfileStore,
     provider: Arc<dyn MountProvider>,
+    updater: EngineUpdater,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -27,8 +37,36 @@ pub struct AppStatus {
 }
 
 impl AppService {
+    /// 默认装配：更新状态放在 store 所在的数据目录（%PROGRAMDATA%\WebDavDrive），
+    /// 网络走系统 WinHTTP。
     pub fn new(store: ProfileStore, provider: Arc<dyn MountProvider>) -> Self {
-        Self { store, provider }
+        let data_dir = store
+            .path()
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        Self::with_updater(
+            store,
+            provider,
+            EngineUpdater::new(data_dir, default_transport()),
+        )
+    }
+
+    /// 宿主/测试定制：换掉数据目录与网络传输层。
+    pub fn with_updater(
+        store: ProfileStore,
+        provider: Arc<dyn MountProvider>,
+        updater: EngineUpdater,
+    ) -> Self {
+        Self {
+            store,
+            provider,
+            updater,
+        }
+    }
+
+    pub fn updater(&self) -> &EngineUpdater {
+        &self.updater
     }
 
     pub fn store(&self) -> &ProfileStore {
@@ -247,10 +285,166 @@ impl AppService {
         }
     }
 
+// -- 引擎（rclone）独立更新 ---------------------------------------------------------
+
+    /// 设置页「引擎（rclone）」区块的只读信息：不触网，只读本地状态与引擎版本。
+    pub fn engine_update_info(&self) -> EngineUpdateInfo {
+        let installed = self.provider.installed_version().ok().flatten();
+        self.updater.info(installed.as_deref())
+    }
+
+    /// 检查更新。force = 设置页的手动按钮（随时可点，绕过每天一次的限制）；
+    /// 自动检查传 false，失败只记 last_error，不弹窗。
+    pub fn check_engine_update(&self, force: bool) -> EngineUpdateInfo {
+        let installed = self.provider.installed_version().ok().flatten();
+        self.updater
+            .check(installed.as_deref(), force, engine_update::now_unix())
+    }
+
+    /// 保存镜像前缀（空 = 官方源）。
+    pub fn set_engine_mirror_prefix(&self, prefix: &str) -> Result<EngineUpdateInfo> {
+        self.updater.set_mirror_prefix(prefix)?;
+        Ok(self.engine_update_info())
+    }
+
+    /// 安装指定版本的官方引擎包（只提示、用户确认后调用，安装必然掉挂载）。
+    pub fn install_engine_update(&self, version: &str) -> Result<EngineUpdateInfo> {
+        let staged = self.updater.stage_release(version)?;
+        self.install_staged(&staged, Some(&engine_update::normalize_version(version)))
+    }
+
+    /// 用本地文件（rclone.exe 或官方 zip）安装引擎。
+    pub fn install_engine_from_file(&self, path: &Path) -> Result<EngineUpdateInfo> {
+        let staged = self.updater.stage_local_file(path)?;
+        self.install_staged(&staged, None)
+    }
+
+    /// 暂存引擎 → 替换 → 返回最新状态。暂存目录无论成败都要清掉。
+    fn install_staged(&self, staged: &Path, expected: Option<&str>) -> Result<EngineUpdateInfo> {
+        let outcome = self.replace_engine(staged, expected);
+        cleanup_staging(staged);
+        let version = outcome?;
+        self.updater.record_installed(&version)?;
+        log::info!("引擎更新完成：v{version}");
+        Ok(self.engine_update_info())
+    }
+
+    /// 无挂载门禁 → 停引擎 → 替换文件 → 重启校验（失败回滚）。
+    ///
+    /// 错误文案必须写清"卡在第几步、有没有回滚"，因为用户此刻最关心的是
+    /// 引擎还能不能用。
+    fn replace_engine(&self, staged: &Path, expected: Option<&str>) -> Result<String> {
+        // 第 1 步：门禁。更新必须停引擎，绝不能打断正在使用的虚拟硬盘。
+        if self.provider.engine_status().running {
+            let mounts = self.provider.list().map_err(|err| {
+                FoundationError::Process(format!(
+                    "第 1 步（检查挂载）失败：无法确认挂载状态（{err}）；为避免打断正在使用的虚拟硬盘，本次安装已取消"
+                ))
+            })?;
+            if !mounts.is_empty() {
+                let points = mounts
+                    .iter()
+                    .map(|mount| mount.mount_point.as_str())
+                    .collect::<Vec<_>>()
+                    .join("、");
+                return Err(FoundationError::Conflict(format!(
+                    "第 1 步（检查挂载）失败：当前还有 {} 个挂载（{points}）。更新引擎会中断这些虚拟硬盘，请先全部卸载再安装",
+                    mounts.len()
+                )));
+            }
+        }
+
+        let installed = self.provider.engine_install_path();
+
+        // 第 2 步：停引擎（Windows 会锁住运行中的映像，不停就换不了文件）。
+        self.provider.shutdown().map_err(|err| {
+            FoundationError::Process(format!(
+                "第 2 步（停止 rclone）失败：{err}。引擎文件未被替换，可继续使用"
+            ))
+        })?;
+
+        // 第 3 步：替换文件（swap_engine 内部失败会自己还原旧文件）。
+        let backup = engine_update::swap_engine(&installed, staged).map_err(|err| {
+            FoundationError::Process(format!(
+                "第 3 步（替换 {}）失败：{err}。原引擎未被破坏，可继续使用（常见原因：目标目录需要管理员权限，或文件被其他程序占用）",
+                installed.display()
+            ))
+        })?;
+
+        // 第 4 步：重启并验收；任何异常都必须回滚到旧引擎。
+        match self.verify_engine(expected) {
+            Ok(version) => {
+                engine_update::discard_backup(&backup);
+                log::info!("引擎已替换为 v{version}：{}", installed.display());
+                Ok(version)
+            }
+            Err(err) => {
+                let rollback = self.rollback_engine(&installed, &backup);
+                Err(FoundationError::Process(format!(
+                    "第 4 步（重启并校验引擎）失败：{err}。{rollback}"
+                )))
+            }
+        }
+    }
+
+    /// 验收新引擎：core/version 版本号对得上，且 options/get 里 vfs.DirCacheTime 仍在。
+    ///
+    /// 为什么查 vfs 选项：挂载参数依赖 vfs.DirCacheTime，rclone 若在新版本里改了名字，
+    /// 挂载会静默用不上缓存设置——必须在更新成功之前拦住并回滚。
+    fn verify_engine(&self, expected: Option<&str>) -> Result<String> {
+        self.provider.ensure_started()?;
+        let status = self.provider.engine_status();
+        if !status.running {
+            return Err(FoundationError::Process(
+                "引擎进程未就绪（core/version 无响应）".into(),
+            ));
+        }
+        let version = status
+            .version
+            .ok_or_else(|| FoundationError::Process("引擎未返回版本号".into()))?;
+        if let Some(expected) = expected {
+            if !engine_update::versions_match(&version, expected) {
+                return Err(FoundationError::Process(format!(
+                    "版本号不匹配：期望 {expected}，引擎实际报告 {version}"
+                )));
+            }
+        }
+        let options = self.provider.options_get()?;
+        if !engine_update::has_vfs_dir_cache_time(&options) {
+            return Err(FoundationError::Process(
+                "引擎不再提供 vfs.DirCacheTime 选项：目录缓存时间会失效".into(),
+            ));
+        }
+        Ok(engine_update::normalize_version(&version))
+    }
+
+    /// 回滚：停掉刚起来的新引擎 → 还原旧文件 → 重启旧引擎。
+    /// 返回值是要拼进错误信息的结果说明（有没有回滚成功、备份还在不在）。
+    fn rollback_engine(&self, installed: &Path, backup: &Path) -> String {
+        let stopped = self.provider.shutdown();
+        let restored = engine_update::rollback_engine(installed, backup);
+        let restarted = self.provider.ensure_started();
+        match (stopped, restored, restarted) {
+            (_, Ok(()), Ok(())) => "已回滚到原引擎并重新启动。".to_string(),
+            (_, Ok(()), Err(err)) => format!(
+                "已回滚到原引擎，但原引擎启动失败：{err}。请退出并重新打开应用。"
+            ),
+            (Err(stop_err), Err(restore_err), _) => format!(
+                "回滚失败：停止新引擎时报（{stop_err}），还原原文件时报（{restore_err}）。备份仍在 {}，可手工改回 rclone.exe。",
+                backup.display()
+            ),
+            (_, Err(restore_err), _) => format!(
+                "回滚失败：{restore_err}。备份仍在 {}，可手工改回 rclone.exe。",
+                backup.display()
+            ),
+        }
+    }
+
     pub fn shutdown(&self) -> Result<()> {
         self.provider.shutdown()
     }
 }
+
 
 /// 这次保存是否改变了「挂载行为」（决定要不要重新挂载）。
 ///

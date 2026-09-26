@@ -33,3 +33,6 @@ tauri-plugin-single-instance = "2.4.4"
 
 [target.'cfg(windows)'.dependencies]
 foundation-windows = { workspace = true }
+# 「从本地文件安装引擎」要弹系统文件对话框：用系统自带的 comdlg32，避免新增插件依赖
+# （tauri-plugin-dialog 不在离线缓存的依赖树里）。
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_Controls", "Win32_UI_Controls_Dialogs"] }

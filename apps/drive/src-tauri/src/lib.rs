@@ -1,6 +1,7 @@
 //! Tauri 2 托盘宿主：装配 drive-core、托盘菜单、单实例与 IPC 命令。
 
 mod commands;
+mod file_dialog;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -200,6 +201,12 @@ pub fn run() {
             commands::autostart_status,
             commands::install_autostart,
             commands::uninstall_autostart,
+            commands::engine_status,
+            commands::check_engine_update,
+            commands::set_engine_mirror_prefix,
+            commands::install_engine_update,
+            commands::install_engine_from_file,
+            commands::pick_engine_file,
         ])
         .setup(move |app| {
             setup_tray(app)?;
@@ -304,6 +311,27 @@ mod tests {
             .expect("可选事件订阅必须处理权限或运行时拒绝");
 
         assert!(rejection_handler > 0, "可选事件订阅失败不得拖垮整个界面");
+    }
+
+    /// 引擎更新命令必须全部注册进 invoke_handler，漏一个前端按钮就会报「命令不存在」。
+    #[test]
+    fn engine_update_commands_are_registered() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("无法读取 {}：{err}", path.display()));
+        for command in [
+            "engine_status",
+            "check_engine_update",
+            "set_engine_mirror_prefix",
+            "install_engine_update",
+            "install_engine_from_file",
+            "pick_engine_file",
+        ] {
+            assert!(
+                source.contains(&format!("commands::{command},")),
+                "引擎更新命令 {command} 未注册到 invoke_handler"
+            );
+        }
     }
 
     /// 打包脚本直接调用 Cargo，必须显式启用 Tauri 的 production protocol。

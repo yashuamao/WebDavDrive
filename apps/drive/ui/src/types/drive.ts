@@ -47,6 +47,23 @@ export interface EngineStatus {
   rc_addr: string | null;
 }
 
+/** 引擎（rclone）更新状态；网络失败只体现在 last_error 上，不弹窗。 */
+export interface EngineUpdateInfo {
+  installed_version: string | null;
+  latest_version: string | null;
+  update_available: boolean;
+  /** 上次检查时间（Unix 秒）。 */
+  last_check_at: number | null;
+  last_error: string | null;
+  notes: string | null;
+  /** 空串 = rclone 官方源。 */
+  mirror_prefix: string;
+  source: string;
+  /** 本次是否真的发起了网络检查（被每天一次的限制跳过时为 false）。 */
+  checked: boolean;
+  not_modified: boolean;
+}
+
 export interface MountRecord {
   fs: string;
   mount_point: string;
