@@ -1,5 +1,25 @@
 # 变更日志
 
+## 0.1.8 — 2026-09-26
+
+- 修复 NSIS 安装包把引擎装错位置的问题（0.1.6 / 0.1.7 受影响）：`bundle.resources` 由数组改为
+  映射形式，`rclone.exe`、`drive-pwcmd.exe`、`LICENSE`、`THIRD_PARTY_NOTICES.md` 现在直接装到
+  `drive.exe` 同目录，而不是 `<安装目录>\resources\`；此前装完会提示"没有 rclone 核心"，
+  且 `--password-command` 指向的 `drive-pwcmd.exe` 路径也是错的；
+- 程序侧兜底引擎发现路径：`<程序目录>\rclone.exe` → `<程序目录>\bin\rclone.exe` →
+  `<程序目录>\resources\rclone.exe`（新增，兼容旧安装布局与旧绿色包），并抽出可测的
+  `engine_candidates_in(dir)`；
+- `--password-command` 解析 `drive-pwcmd.exe` 时同样同时尝试同目录与 `resources\` 子目录；
+- 修复"本地没有 rclone 就无法下载引擎"：`update_available` 在缺少本地版本时恒为 false，
+  设置页只在它上面判断，导致引擎缺失时没有任何安装入口；现在引擎缺失（`engine.installed == false`）
+  时也显示「安装」按钮，并在没有可用版本时提示先点「检查更新」；
+- 新增单测：引擎候选路径顺序、以及只在 `resources\` 里存在引擎时仍能被发现。
+
+验证状态：
+
+- `cargo test --offline --workspace -- --test-threads=1`：全部测试块 0 失败（drive-core 单测 29 → 31）；
+- 前端 production build 通过；NSIS 安装包静默安装到临时目录后核对实际落盘布局。
+
 ## 0.1.7 — 2026-09-26
 
 - 新增 rclone 引擎独立更新（设置页「引擎」面板）：可在不发新版的前提下单独升级 rclone.exe；

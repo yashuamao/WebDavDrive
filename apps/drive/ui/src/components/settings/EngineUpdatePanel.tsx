@@ -122,12 +122,18 @@ export function EngineUpdatePanel({ engine }: { engine: EngineStatus }) {
   const lastCheck = formatCheckTime(info?.last_check_at ?? null);
   const available = info?.latest_version ?? null;
   const hasUpdate = Boolean(info?.update_available && available);
+  // 本机没有引擎（安装包没带上 / 被删 / 从零开始）时必须也能装：
+  // update_available 在没有本地版本时恒为 false，只看它就会出现"没 rclone 也没法下载"。
+  const engineMissing = !engine.installed;
+  const canInstall = Boolean(available) && (hasUpdate || engineMissing);
 
   return (
     <>
       <SettingsRow label="当前版本" description={engine.path ?? "未找到 rclone.exe"}>
         <span className="setting-value">
-          {engine.running ? "运行中" : engine.installed ? "未启动" : "未安装"} · v{version}
+          {engine.installed
+            ? (engine.running ? "运行中 · v" : "未启动 · v") + version
+            : "未安装"}
         </span>
       </SettingsRow>
 
@@ -154,16 +160,20 @@ export function EngineUpdatePanel({ engine }: { engine: EngineStatus }) {
       <SettingsRow
         label="可用版本"
         description={
-          hasUpdate
-            ? "安装会先停止 rclone 并替换引擎文件，期间虚拟硬盘会短暂中断"
-            : available
-              ? "当前已是最新版本（rclone v" + available + "）"
-              : "尚未检查过更新"
+          engineMissing
+            ? available
+              ? "本机还没有 rclone 引擎：点「安装」会下载官方包并放到程序目录"
+              : "本机还没有 rclone 引擎：请先点上面的「检查更新」获取可用版本"
+            : hasUpdate
+              ? "安装会先停止 rclone 并替换引擎文件，期间虚拟硬盘会短暂中断"
+              : available
+                ? "当前已是最新版本（rclone v" + available + "）"
+                : "尚未检查过更新"
         }
       >
         <div className="engine-control">
           <span className="setting-value">{available ? "v" + available : "-"}</span>
-          {hasUpdate ? (
+          {canInstall ? (
             <Button
               variant="primary"
               size="compact"

@@ -825,7 +825,7 @@ dependencies = [
 
 [[package]]
 name = "drive"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "drive-core",
  "foundation-core",
@@ -843,7 +843,7 @@ dependencies = [
 
 [[package]]
 name = "drive-core"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "flate2",
  "foundation-config",
@@ -1088,7 +1088,7 @@ dependencies = [
 
 [[package]]
 name = "foundation-config"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "chrono",
  "foundation-core",
@@ -1101,7 +1101,7 @@ dependencies = [
 
 [[package]]
 name = "foundation-core"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "chrono",
  "log",
@@ -1112,7 +1112,7 @@ dependencies = [
 
 [[package]]
 name = "foundation-secrets"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "foundation-core",
  "log",
@@ -1123,7 +1123,7 @@ dependencies = [
 
 [[package]]
 name = "foundation-supervisor"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "foundation-core",
  "log",
@@ -1132,7 +1132,7 @@ dependencies = [
 
 [[package]]
 name = "foundation-windows"
-version = "0.1.6"
+version = "0.1.8"
 dependencies = [
  "foundation-core",
  "log",

@@ -59,6 +59,19 @@ impl EngineConfig {
     }
 }
 
+/// 程序目录下的引擎候选位置（顺序即优先级）：根目录 → bin\ → resources\。
+///
+/// 为什么要带 resources\：NSIS 安装包曾经（0.1.7 及以前）把随附的 rclone.exe 装到
+/// <安装目录>\resources\，程序却只在根目录找，结果"装完没有引擎"。安装器已改为放到
+/// 根目录，这里同时兜底旧安装与旧绿色包，保证任何布局都能找到。
+pub fn engine_candidates_in(dir: &std::path::Path) -> Vec<PathBuf> {
+    vec![
+        dir.join("rclone.exe"),
+        dir.join("bin").join("rclone.exe"),
+        dir.join("resources").join("rclone.exe"),
+    ]
+}
+
 struct Engine {
     child: ManagedChild,
     rc: RcloneRc,
@@ -83,7 +96,7 @@ impl RcloneProvider {
         &self.config
     }
 
-    /// 查找 rclone.exe：显式路径 → RCLONE_EXE → exe 同目录/bin → PATH。
+    /// 查找 rclone.exe：显式路径 → RCLONE_EXE → exe 同目录/bin/resources → PATH。
     pub fn find_engine(&self) -> Option<PathBuf> {
         let mut candidates: Vec<PathBuf> = Vec::new();
         if let Some(path) = &self.config.rclone_path {
@@ -96,8 +109,7 @@ impl RcloneProvider {
         }
         if let Ok(exe) = std::env::current_exe() {
             if let Some(dir) = exe.parent() {
-                candidates.push(dir.join("rclone.exe"));
-                candidates.push(dir.join("bin").join("rclone.exe"));
+                candidates.extend(engine_candidates_in(dir));
             }
         }
         if let Ok(path_var) = std::env::var("PATH") {
@@ -611,5 +623,28 @@ mod tests {
         assert_eq!(parse_engine_version(""), None);
         assert_eq!(parse_engine_version("rclone"), None);
         assert_eq!(parse_engine_version("rclone v"), None);
+    }
+
+    #[test]
+    fn engine_candidates_prefer_root_then_bin_then_resources() {
+        let dir = std::path::Path::new(r"C:\Program Files\WebDAV Drive");
+        let found = engine_candidates_in(dir);
+        assert_eq!(found[0], dir.join("rclone.exe"));
+        assert_eq!(found[1], dir.join("bin").join("rclone.exe"));
+        // 0.1.7 及更早的 NSIS 安装布局：引擎被装进 resources\ 子目录。
+        assert_eq!(found[2], dir.join("resources").join("rclone.exe"));
+    }
+
+    #[test]
+    fn engine_candidates_find_installed_resource_copy() {
+        let dir = std::env::temp_dir().join(format!("drive-engine-{}", Uuid::new_v4().simple()));
+        let nested = dir.join("resources");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("rclone.exe"), b"MZ").unwrap();
+        let hit = engine_candidates_in(&dir)
+            .into_iter()
+            .find(|path| path.is_file());
+        assert_eq!(hit.as_deref(), Some(nested.join("rclone.exe").as_path()));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

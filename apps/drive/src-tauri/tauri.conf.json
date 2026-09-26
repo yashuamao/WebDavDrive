@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "WebDAV Drive",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "identifier": "com.foundation.webdavdrive",
   "build": {
     "beforeDevCommand": {
@@ -44,12 +44,12 @@
       "icons/128x128@2x.png",
       "icons/icon.ico"
     ],
-    "resources": [
-      "resources/rclone.exe",
-      "resources/drive-pwcmd.exe",
-      "resources/LICENSE",
-      "resources/THIRD_PARTY_NOTICES.md"
-    ],
+    "resources": {
+      "resources/rclone.exe": "rclone.exe",
+      "resources/drive-pwcmd.exe": "drive-pwcmd.exe",
+      "resources/LICENSE": "LICENSE",
+      "resources/THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser",

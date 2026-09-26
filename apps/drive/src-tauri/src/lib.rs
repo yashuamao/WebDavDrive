@@ -27,7 +27,19 @@ fn data_dir() -> PathBuf {
 fn password_command(key_path: &std::path::Path) -> String {
     let pwcmd = std::env::current_exe()
         .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join("drive-pwcmd.exe")))
+        .and_then(|exe| exe.parent().map(PathBuf::from))
+        .and_then(|dir| {
+            // 同目录优先（绿色版与修正后的安装包），再兜底 resources\（旧安装布局）。
+            let direct = dir.join("drive-pwcmd.exe");
+            if direct.is_file() {
+                return Some(direct);
+            }
+            let nested = dir.join("resources").join("drive-pwcmd.exe");
+            if nested.is_file() {
+                return Some(nested);
+            }
+            Some(direct)
+        })
         .unwrap_or_else(|| PathBuf::from("drive-pwcmd.exe"));
     format!(
         "\"{}\" --key-file \"{}\"",
