@@ -1,5 +1,25 @@
 # 变更日志
 
+## 0.1.9 — 2026-09-26
+
+- 新增应用自更新（设置页「应用更新」面板）：检查新版本 → 下载 NSIS 安装包 → SHA256 校验 →
+  卸载全部挂载并停引擎 → 静默安装到当前安装目录 → 自动重启。安装由独立的更新器进程
+  `drive-updater.exe` 执行（正在运行的 `drive.exe` 要被替换，不能在自身进程里安装），并等主程序
+  退出后才动手；120 秒内主程序未退出就放弃本次更新，不会带着文件锁安装；
+- 绿色版（解压即用、目录里没有 `uninstall.exe`）不做自动更新，面板只提示到 GitHub Releases 手动下载；
+- 安装包默认目录本地检测：应用每次启动把自身安装目录写入 `HKCU\Software\foundation\WebDAV Drive`，
+  安装包新增 NSIS hooks（`apps/drive/src-tauri/nsis/hooks.nsh`），在目录页显示前校验并探测常见安装位置
+  （注册表记忆值、`%LOCALAPPDATA%\WebDAV Drive`、`%LOCALAPPDATA%\Programs\WebDAV Drive`、
+  `%ProgramFiles%\WebDAV Drive` 等），命中已有安装就把默认目录指过去，重装不必再手选路径；
+  静默安装（`/S`）仍以 `/D=` 为准，不做改动；
+- 更新源复用引擎更新的镜像前缀与每日限流策略，状态持久化到 `%PROGRAMDATA%\WebDavDrive\app-update.json`，
+  更新器诊断日志写到 `app-update.log`；应用启动时会清理遗留的临时更新目录。
+
+验证状态：
+
+- `cargo test --offline --workspace -- --test-threads=1`：全部测试块 0 失败（drive-core 单测 57）；
+- 前端 production build 通过；NSIS 安装包实跑静默安装到带空格目录、被动模式下的默认目录探测；
+- 自更新链路实跑：更新器进程等待主程序退出 → 静默安装 → 重启新版本。
 ## 0.1.8 — 2026-09-26
 
 - 修复 NSIS 安装包把引擎装错位置的问题（0.1.6 / 0.1.7 受影响）：`bundle.resources` 由数组改为

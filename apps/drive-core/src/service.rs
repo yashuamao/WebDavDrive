@@ -14,6 +14,7 @@ use std::sync::Arc;
 use foundation_core::{FoundationError, Result};
 use serde::Serialize;
 
+use crate::app_update::{self, AppUpdateInfo, AppUpdater};
 use crate::engine_update::{
     self, cleanup_staging, default_transport, EngineUpdateInfo, EngineUpdater,
 };
@@ -438,6 +439,100 @@ impl AppService {
                 backup.display()
             ),
         }
+    }
+
+    // -- 应用（安装包）自更新 ---------------------------------------------------
+    //
+    // 界面上的「应用更新」：检查 GitHub release → 下载并校验 setup.exe →
+    // 拉起独立的更新器进程（它等本进程退出后静默安装并重启）。
+    // 绿色版（免安装 zip，目录里没有 uninstall.exe）不支持，直接报错让用户去
+    // GitHub 下载；镜像前缀沿用引擎更新里的设置，不新增配置项。
+
+    fn app_updater(&self) -> AppUpdater {
+        AppUpdater::new(self.updater.dir())
+    }
+
+    fn mirror_prefix(&self) -> String {
+        self.updater.load_state().mirror_prefix
+    }
+
+    /// 当前是不是绿色版：程序目录里没有 uninstall.exe 就是绿色版。
+    /// 拿不到自身路径时按绿色版处理（宁可拒绝更新，也不要装错地方）。
+    pub fn is_portable(&self) -> bool {
+        match std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf)) {
+            Some(dir) => !app_update::is_installer_directory(&dir),
+            None => true,
+        }
+    }
+
+    /// 不触网的只读信息（设置页打开时用）。
+    pub fn app_update_info(&self, installed: &str) -> AppUpdateInfo {
+        self.app_updater().info(installed, self.is_portable())
+    }
+
+    /// 检查应用更新（force = 用户点了「检查更新」）。失败只记录，不返回 Err。
+    pub fn check_app_update(&self, installed: &str, force: bool) -> AppUpdateInfo {
+        let mirror = self.mirror_prefix();
+        self.app_updater().check(
+            installed,
+            force,
+            engine_update::now_unix(),
+            &mirror,
+            self.is_portable(),
+        )
+    }
+
+    /// 下载并校验安装包。此时不退出、不卸载任何东西；下好等用户确认再装。
+    pub fn download_app_update(&self, installed: &str, version: &str) -> Result<AppUpdateInfo> {
+        if self.is_portable() {
+            return Err(FoundationError::Conflict(
+                "绿色版不支持自动更新：请到 GitHub Releases 下载新版本".into(),
+            ));
+        }
+        let mirror = self.mirror_prefix();
+        let updater = self.app_updater();
+        updater.stage_release(version, &mirror)?;
+        Ok(updater.info(installed, false))
+    }
+
+    /// 拉起更新器：它等本进程退出 → 静默安装 → 重启应用。
+    /// 本方法返回后调用方（命令层）必须触发退出，否则更新器只会等到超时。
+    pub fn start_app_update(&self, installed: &str) -> Result<AppUpdateInfo> {
+        if self.is_portable() {
+            return Err(FoundationError::Conflict(
+                "绿色版不支持自动更新：请到 GitHub Releases 下载新版本".into(),
+            ));
+        }
+        let updater = self.app_updater();
+        let staged = updater.staged_setup().ok_or_else(|| {
+            FoundationError::InvalidInput("还没有下载安装包，请先下载更新".into())
+        })?;
+        let current = std::env::current_exe()
+            .map_err(|err| FoundationError::Process(format!("无法定位程序路径：{err}")))?;
+        let install_dir = current
+            .parent()
+            .ok_or_else(|| FoundationError::Process("无法定位程序所在目录".into()))?
+            .to_path_buf();
+        let copy = app_update::copy_updater(&current)?;
+        let plan = app_update::ApplyPlan {
+            setup: staged,
+            target_dir: install_dir,
+            wait_pid: std::process::id(),
+            exe: current,
+            log_path: updater.log_path(),
+            restart_args: if std::env::args().any(|arg| arg == "--hidden") {
+                vec!["--hidden".to_string()]
+            } else {
+                Vec::new()
+            },
+        };
+        app_update::spawn_updater(&copy, &plan)?;
+        app_update::log_line(&plan.log_path, "已拉起更新器，等待应用退出后安装");
+        log::info!(
+            "应用更新器已启动（等本进程退出后安装 {}）",
+            plan.setup.display()
+        );
+        Ok(updater.info(installed, false))
     }
 
     pub fn shutdown(&self) -> Result<()> {

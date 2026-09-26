@@ -4,6 +4,7 @@
 //! → `provider`（挂载引擎适配）→ `service`（应用服务编排）。
 //! Tauri 宿主只负责把这些能力暴露成命令与界面。
 
+pub mod app_update;
 pub mod autostart;
 pub mod http;
 pub mod model;

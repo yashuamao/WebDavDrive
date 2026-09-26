@@ -64,6 +64,25 @@ export interface EngineUpdateInfo {
   not_modified: boolean;
 }
 
+/** 应用（安装包）自更新状态；网络失败只体现在 last_error 上，不弹窗。 */
+export interface AppUpdateInfo {
+  installed_version: string;
+  latest_version: string | null;
+  update_available: boolean;
+  /** 上次检查时间（Unix 秒）。 */
+  last_check_at: number | null;
+  last_error: string | null;
+  notes: string | null;
+  source: string;
+  /** 本次是否真的发起了网络检查（被每天一次的限制跳过时为 false）。 */
+  checked: boolean;
+  not_modified: boolean;
+  /** 绿色版（免安装 zip）不支持自动更新，只能去 GitHub 下载。 */
+  portable: boolean;
+  /** 安装包是否已下载并校验通过，可以直接安装。 */
+  setup_downloaded: boolean;
+}
+
 export interface MountRecord {
   fs: string;
   mount_point: string;

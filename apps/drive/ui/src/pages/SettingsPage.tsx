@@ -1,5 +1,6 @@
 import { Check } from "lucide-react";
 import { StatusIndicator } from "@/components/feedback/StatusIndicator";
+import { AppUpdatePanel } from "@/components/settings/AppUpdatePanel";
 import { EngineUpdatePanel } from "@/components/settings/EngineUpdatePanel";
 import { SettingsGroup } from "@/components/settings/SettingsGroup";
 import { SettingsRow } from "@/components/settings/SettingsRow";
@@ -54,6 +55,13 @@ export function SettingsPage({ status }: { status: AppStatus }) {
             把 rclone.exe 放到程序同目录或 bin 子目录，或设置 RCLONE_EXE 环境变量。
           </div>
         ) : null}
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="应用更新"
+        description="检查新版本 → 下载并校验安装包 → 卸载全部挂载后静默安装并自动重启（绿色版请手动下载）"
+      >
+        <AppUpdatePanel />
       </SettingsGroup>
 
       <SettingsGroup

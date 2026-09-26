@@ -145,6 +145,29 @@ fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
 }
 
 pub fn run() {
+    // 更新器分支：这段代码是旧版本进程拉起的自身副本，必须在任何初始化之前处理
+    // （数据目录/ACL/日志/Tauri 都不需要），所以直接用 std::process::exit 返回。
+    match drive_core::app_update::apply_plan_from_args(std::env::args()) {
+        Ok(Some(plan)) => {
+            let code = match drive_core::app_update::run_apply_update(&plan) {
+                Ok(()) => 0,
+                Err(err) => {
+                    let _ = drive_core::app_update::log_line(
+                        &plan.log_path,
+                        &format!("更新失败：{err}"),
+                    );
+                    2
+                }
+            };
+            std::process::exit(code);
+        }
+        Ok(None) => {}
+        Err(err) => {
+            eprintln!("更新器参数错误：{err}");
+            std::process::exit(2);
+        }
+    }
+
     // 计划任务拉起时带 --hidden：启动即隐藏到托盘
     let hidden = std::env::args().any(|arg| arg == "--hidden");
     let data_dir = data_dir();
@@ -219,6 +242,10 @@ pub fn run() {
             commands::install_engine_update,
             commands::install_engine_from_file,
             commands::pick_engine_file,
+            commands::app_update_status,
+            commands::check_app_update,
+            commands::download_app_update,
+            commands::install_app_update,
         ])
         .setup(move |app| {
             setup_tray(app)?;
@@ -230,6 +257,17 @@ pub fn run() {
             // 启动时挂载自启项：后台执行，不阻塞首屏
             let service = app.state::<AppState>().service.clone();
             std::thread::spawn(move || {
+                // 上次更新留下的临时目录可以直接清了；顺手把安装位置写进注册表，
+                // 让安装包下次默认选中同一个目录（安装包本地检测的数据来源）。
+                drive_core::app_update::cleanup_stale_updaters();
+                if let Some(dir) = std::env::current_exe()
+                    .ok()
+                    .and_then(|exe| exe.parent().map(|parent| parent.to_path_buf()))
+                {
+                    if let Err(err) = drive_core::app_update::remember_install_location(&dir) {
+                        log::warn!("记录安装位置失败：{err}");
+                    }
+                }
                 let failures = service.mount_all_autostart();
                 for (id, err) in failures {
                     log::error!("自启挂载失败：{id}: {err}");
@@ -344,6 +382,43 @@ mod tests {
                 "引擎更新命令 {command} 未注册到 invoke_handler"
             );
         }
+    }
+
+    /// 应用更新命令必须全部注册进 invoke_handler，漏一个前端按钮就会报「命令不存在」。
+    #[test]
+    fn app_update_commands_are_registered() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("无法读取 {}：{err}", path.display()));
+        for command in [
+            "app_update_status",
+            "check_app_update",
+            "download_app_update",
+            "install_app_update",
+        ] {
+            assert!(
+                source.contains(&format!("commands::{command},")),
+                "应用更新命令 {command} 未注册到 invoke_handler"
+            );
+        }
+    }
+
+    /// 更新器分支必须先于数据目录/ACL 初始化：更新器副本不该碰用户数据目录。
+    #[test]
+    fn updater_branch_runs_before_initialization() {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("无法读取 {}：{err}", path.display()));
+        let updater = source
+            .find("apply_plan_from_args")
+            .expect("run() 必须解析更新器命令行");
+        let acl = source
+            .find("harden_data_dir")
+            .expect("run() 必须收紧数据目录权限");
+        assert!(
+            updater < acl,
+            "更新器分支必须在数据目录/ACL 初始化之前处理"
+        );
     }
 
     /// 打包脚本直接调用 Cargo，必须显式启用 Tauri 的 production protocol。

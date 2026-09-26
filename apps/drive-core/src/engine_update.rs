@@ -585,6 +585,11 @@ impl EngineUpdater {
         self.dir.join(STATE_FILE_NAME)
     }
 
+    /// 数据目录（应用自更新把状态与日志放在同一个目录）。
+    pub fn dir(&self) -> &Path {
+        &self.dir
+    }
+
     /// 读取状态。文件缺失/损坏都退回默认值并记日志：更新状态坏掉不能拖垮整个应用。
     pub fn load_state(&self) -> EngineUpdateState {
         match fs::read_to_string(self.state_path()) {

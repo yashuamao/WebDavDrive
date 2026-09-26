@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use std::path::Path;
 
+use drive_core::app_update::AppUpdateInfo;
 use drive_core::engine_update::EngineUpdateInfo;
 use drive_core::model::ConnectionInput;
 use drive_core::provider::MountRecord;
@@ -170,6 +171,61 @@ pub fn install_engine_from_file(
 pub fn pick_engine_file(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
     let owner = window.hwnd().map(|hwnd| hwnd.0 as isize).unwrap_or(0);
     crate::file_dialog::pick_engine_file(owner)
+}
+
+/// 应用（安装包）自更新的只读状态：不触网，失败信息从状态里读。
+#[tauri::command]
+pub fn app_update_status(app: AppHandle, state: State<'_, AppState>) -> AppUpdateInfo {
+    state.service.app_update_info(&app_version(&app))
+}
+
+/// 检查应用更新（force = 用户点了「检查更新」）。
+#[tauri::command]
+pub fn check_app_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    force: bool,
+) -> AppUpdateInfo {
+    state.service.check_app_update(&app_version(&app), force)
+}
+
+/// 下载并校验安装包（不退出、不卸载任何挂载）。
+#[tauri::command]
+pub fn download_app_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    version: String,
+) -> Result<AppUpdateInfo, String> {
+    if state.exit_in_progress.load(Ordering::Acquire) {
+        return Err("应用正在退出，暂不能更新应用".into());
+    }
+    state
+        .service
+        .download_app_update(&app_version(&app), &version)
+        .map_err(message)
+}
+
+/// 安装已下载的更新：拉起更新器 → 立刻优雅退出（卸挂载 + 停引擎），
+/// 更新器等到本进程退出后再静默安装并重启应用。
+#[tauri::command]
+pub fn install_app_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<AppUpdateInfo, String> {
+    if state.exit_in_progress.load(Ordering::Acquire) {
+        return Err("应用正在退出，暂不能更新应用".into());
+    }
+    let info = state
+        .service
+        .start_app_update(&app_version(&app))
+        .map_err(message)?;
+    crate::begin_graceful_exit(&app);
+    Ok(info)
+}
+
+/// 当前应用版本（来自打包时写入的包信息，不读环境变量）。
+fn app_version(app: &AppHandle) -> String {
+    app.package_info().version.to_string()
 }
 
 #[tauri::command]

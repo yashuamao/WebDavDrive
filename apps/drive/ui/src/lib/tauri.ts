@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppStatus,
+  AppUpdateInfo,
   AutostartStatus,
   ConnectionInput,
   ConnectionView,
@@ -34,6 +35,13 @@ export const driveApi = {
   installEngineFromFile: (path: string) =>
     invoke<EngineUpdateInfo>("install_engine_from_file", { path }),
   pickEngineFile: () => invoke<string | null>("pick_engine_file"),
+  appUpdateStatus: () => invoke<AppUpdateInfo>("app_update_status"),
+  checkAppUpdate: (force: boolean) => invoke<AppUpdateInfo>("check_app_update", { force }),
+  downloadAppUpdate: (version: string) =>
+    invoke<AppUpdateInfo>("download_app_update", { version }),
+  // 调用成功后应用会立刻开始退出（卸挂载 + 停引擎），随后更新器静默安装并重启，
+  // 因此这个 Promise 可能永远不 resolve——界面按"正在退出安装"处理即可。
+  installAppUpdate: () => invoke<AppUpdateInfo>("install_app_update"),
   exitApplication: () => invoke<void>("exit_application"),
   forceExit: () => invoke<void>("force_exit"),
 };
