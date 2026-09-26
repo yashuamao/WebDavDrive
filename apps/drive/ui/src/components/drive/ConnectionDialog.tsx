@@ -225,15 +225,15 @@ export function ConnectionDialog({
 
               <div className="toggle-grid">
                 <label className="toggle-field">
-                  <span><strong>网络驱动器</strong><small>在资源管理器中显示为网络位置</small></span>
+                  <span className="toggle-field-copy"><strong>网络驱动器</strong><small>在资源管理器中显示为网络位置</small></span>
                   <Switch label="网络驱动器" checked={form.network_mode} onCheckedChange={(checked) => update("network_mode", checked)} />
                 </label>
                 <label className="toggle-field">
-                  <span><strong>只读</strong><small>阻止远端文件被修改</small></span>
+                  <span className="toggle-field-copy"><strong>只读</strong><small>阻止远端文件被修改</small></span>
                   <Switch label="只读" checked={form.read_only} onCheckedChange={(checked) => update("read_only", checked)} />
                 </label>
                 <label className="toggle-field">
-                  <span><strong>启动时自动挂载</strong><small>应用启动后恢复此连接</small></span>
+                  <span className="toggle-field-copy"><strong>启动时自动挂载</strong><small>应用启动后恢复此连接</small></span>
                   <Switch label="启动时自动挂载" checked={form.autostart} onCheckedChange={(checked) => update("autostart", checked)} />
                 </label>
               </div>

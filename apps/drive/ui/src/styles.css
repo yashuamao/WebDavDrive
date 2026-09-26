@@ -1076,7 +1076,9 @@ button:disabled {
   padding: 8px 9px;
 }
 
-.toggle-field > span {
+/* 只用显式类：base-ui 的 Switch.Root 渲染的是 <span role="switch">，
+   用 .toggle-field > span 会把开关轨道也变成纵向 flex（圆点会被顶到上沿）。 */
+.toggle-field-copy {
   display: flex;
   min-width: 0;
   flex-direction: column;

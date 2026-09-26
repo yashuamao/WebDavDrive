@@ -1,5 +1,25 @@
 # 变更日志
 
+## 0.1.6 — 2026-09-26
+
+- 分发形态改为 **NSIS 安装包**（`bundle.targets = ["nsis"]`、`installMode: currentUser`）：安装向导自带
+  「选择安装目录」页，默认 `%LOCALAPPDATA%`，用户可改到其它盘；再次安装与静默更新会沿用上次选择的目录
+  （Tauri 模板的 `RestorePreviousInstallLocation`），无需自定义模板即可满足"不想装在 C 盘"；
+- 修复安装包内容不完整：现在随包带上 `rclone.exe`、`drive-pwcmd.exe`、`LICENSE`、
+  `THIRD_PARTY_NOTICES.md`（此前 NSIS 包里只有 `drive.exe` 与前端，装完无法工作）；
+- 新增 `scripts/build-installer.ps1`（构建 NSIS 安装包 + 输出 SHA-256 + 自动暂存资源）与
+  `scripts/sync-version.mjs`（版本号单一来源，`--check` 供发版前校验）；
+- 前端本地加入 `@tauri-apps/cli`（devDependency）；
+- 修复连接编辑弹窗三个开关的圆点位置：`.toggle-field > span` 误命中 base-ui 渲染的
+  `<span role="switch">` 轨道，把轨道变成纵向 flex（圆点顶到上沿、选中态探出右边界），改为显式类
+  `.toggle-field-copy`；
+- 绿色 zip 作为旁路产物保留。
+
+验证状态：
+
+- `cargo test --offline --workspace -- --test-threads=1`：80 项通过 / 0 失败；
+- 前端 production build 通过；NSIS 安装包与绿色 zip 均已产出，SHA-256 见 Release 资产。
+
 ## 0.1.5 — 2026-09-25
 
 - 修复挂载设置在「已经挂载的驱动器」上保存后不生效的问题（目录缓存时间、VFS 缓存模式、卷标、
